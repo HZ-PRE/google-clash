@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Clash Switchboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="popup-shell">
+  <main class="panel popup-panel">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Chrome Proxy</p>
+        <h1>Clash<br />Switchboard</h1>
+      </div>
+      <label class="power-switch" title="启用/关闭浏览器代理">
+        <input id="enabled" type="checkbox" />
+        <span></span>
+      </label>
+    </section>
+
+    <section class="status-card" id="statusCard">
+      <div class="status-dot" id="statusDot"></div>
+      <div>
+        <strong id="statusTitle">读取中</strong>
+        <small id="statusText">正在检测配置</small>
+      </div>
+    </section>
+
+    <section class="vpn-card">
+      <button id="vpnBtn" class="vpn-btn">启动 VPN</button>
+      <button id="stopVpnBtn" class="secondary-btn stop-vpn-btn">停止 VPN</button>
+      <p id="vpnMsg" class="hint"></p>
+    </section>
+
+    <section class="segmented" aria-label="模式">
+      <button data-mode="rule" class="mode-btn">规则</button>
+      <button data-mode="global" class="mode-btn">全局</button>
+      <button data-mode="direct" class="mode-btn">直连</button>
+    </section>
+
+    <section class="grid-two">
+      <label class="field">
+        <span>代理类型</span>
+        <select id="proxyType">
+          <option value="mixed">Mixed/HTTP</option>
+          <option value="http">HTTP</option>
+          <option value="socks5">SOCKS5</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>端口</span>
+        <input id="proxyPort" type="number" min="1" max="65535" />
+      </label>
+    </section>
+
+    <label class="field">
+      <span>代理地址</span>
+      <input id="proxyHost" type="text" placeholder="127.0.0.1" />
+    </label>
+
+    <section class="controller-card">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">External Controller</p>
+          <h2>节点切换</h2>
+        </div>
+        <button id="refreshBtn" class="ghost-btn">刷新</button>
+      </div>
+      <label class="field">
+        <span>代理组</span>
+        <select id="groupSelect"></select>
+      </label>
+      <label class="field">
+        <span>节点</span>
+        <select id="nodeSelect"></select>
+      </label>
+      <button id="switchNodeBtn" class="primary-btn">切换节点</button>
+      <button id="updateSubPopupBtn" class="secondary-btn inline-full">更新订阅</button>
+      <button id="allowLanBtn" class="secondary-btn inline-full">局域网：关闭</button>
+      <p id="controllerMsg" class="hint"></p>
+    </section>
+
+    <footer>
+      <button id="optionsBtn" class="link-btn">高级设置</button>
+      <button id="clearBtn" class="link-btn danger">清除代理</button>
+    </footer>
+  </main>
+  <script src="clash-api.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

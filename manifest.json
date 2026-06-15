@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Clash Switchboard",
+  "version": "1.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6Ih5mC+vKjLHptFQLLDdEMveuGpWBIWJxi6XFCMxiWDnbagKy0l/sG8vWoFshz/C70qUd2lqmJyjs3MMjFukrqb23sVKUOBw61Q44mhl38WMbiOJNe/w5L4OXW5pZYgyCFQnQ0rw0lqJX5GFOAPCsdreK1OA4de1JvLPCyMNxMATe1mievPMyTNWStp4NxIhmJLKIWM/CSLGxommkYyroqkZQZKtdIPrwfH+gU00d9A50QPPTSlj+7TidoWZ3o+LadOKpLxgNm5FMqZt6Dvnt3WWV1D3DUr0RDic3AHOo+o9o8ZBTGMnfn+7hoikJgPbTzlBo16Y/2OrdgLvWEGWIQIDAQAB",
+  "description": "Chrome proxy controller for Clash / Clash.Meta / Mihomo. Supports one-click Mihomo startup, browser proxy switching and Clash group node selection.",
+  "permissions": [
+    "proxy",
+    "storage",
+    "alarms",
+    "nativeMessaging"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "http://[::1]/*",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Clash Switchboard",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "icons": {
+    "16": "icons/icon16.svg",
+    "32": "icons/icon32.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  }
+}

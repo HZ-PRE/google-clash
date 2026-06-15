@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Clash Switchboard 设置</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="options-shell">
+  <main class="panel options-panel">
+    <header class="options-header">
+      <div>
+        <p class="eyebrow">Settings</p>
+        <h1>Clash Switchboard</h1>
+        <p class="subtitle">控制 Chrome 代理到 Clash 端口，并通过 External Controller 切换节点。</p>
+      </div>
+    </header>
+
+    <section class="settings-grid">
+      <div class="settings-card">
+        <h2>代理入口</h2>
+        <label class="field">
+          <span>代理地址</span>
+          <input id="proxyHost" type="text" placeholder="127.0.0.1" />
+        </label>
+        <label class="field">
+          <span>代理端口</span>
+          <input id="proxyPort" type="number" min="1" max="65535" />
+        </label>
+        <label class="field">
+          <span>代理类型</span>
+          <select id="proxyType">
+            <option value="mixed">Mixed/HTTP - Clash mixed-port</option>
+            <option value="http">HTTP - Clash port</option>
+            <option value="socks5">SOCKS5 - Clash socks-port</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>绕过列表，全局模式使用，逗号分隔</span>
+          <textarea id="bypassList" rows="4"></textarea>
+        </label>
+      </div>
+
+      <div class="settings-card">
+        <h2>Clash 控制器</h2>
+        <label class="field">
+          <span>External Controller URL</span>
+          <input id="controllerUrl" type="text" placeholder="http://127.0.0.1:9090" />
+        </label>
+        <label class="field">
+          <span>Secret，可为空</span>
+          <input id="controllerSecret" type="password" placeholder="Clash secret" />
+        </label>
+        <button id="testBtn" class="secondary-btn">测试连接</button>
+        <p id="testMsg" class="hint"></p>
+        <div class="controller-help">
+          <strong>提示</strong>
+          <p>代理入口端口通常是 <code>7890</code>；External Controller 控制端口通常是 <code>9090</code>。</p>
+          <p>测试连接访问的是 <code>/version</code>，必须填写 Clash 配置里的 <code>external-controller</code> 地址。</p>
+        </div>
+      </div>
+
+      <div class="settings-card full">
+        <h2>订阅节点</h2>
+        <div id="subscriptionList" class="subscription-list"></div>
+
+        <div class="subscription-form">
+          <input id="subEditId" type="hidden" />
+          <label class="field">
+            <span>订阅名称</span>
+            <input id="subName" type="text" placeholder="例如：香港高速 / 备用线路" />
+          </label>
+          <label class="field">
+            <span>订阅链接（Clash/Mihomo YAML）</span>
+            <input id="subUrl" type="url" placeholder="https://example.com/api/v1/client/subscribe?token=..." />
+          </label>
+          <label class="field">
+            <span>备注</span>
+            <textarea id="subRemark" rows="3" placeholder="到期时间、用途、套餐说明等"></textarea>
+          </label>
+          <button id="addSubBtn" class="secondary-btn">添加订阅</button>
+        </div>
+
+        <label class="check-field">
+          <input id="updateSubscriptionBeforeStart" type="checkbox" />
+          <span>点击启动 VPN 前自动更新当前启用订阅</span>
+        </label>
+        <label class="check-field">
+          <input id="allowLan" type="checkbox" />
+          <span>允许局域网连接 Mihomo 代理（写入 <code>allow-lan</code>）</span>
+        </label>
+        <div class="button-row">
+          <button id="applyAllowLanBtn" class="secondary-btn">应用局域网开关</button>
+          <button id="refreshActiveSubInfoBtn" class="secondary-btn">识别当前流量/到期</button>
+          <button id="refreshAllSubInfoBtn" class="secondary-btn">识别全部订阅</button>
+          <button id="updateSubBtn" class="secondary-btn">更新当前订阅到配置</button>
+          <button id="updateSubRestartBtn" class="primary-btn">更新当前订阅并重启内核</button>
+        </div>
+        <p id="subMsg" class="hint"></p>
+        <div class="controller-help">
+          <strong>说明</strong>
+          <p>可保存多个订阅链接，并给每个订阅添加备注。列表中选中的订阅会作为当前启用订阅。</p>
+          <p>订阅会下载到 <code>core/subscription.yaml</code>，并写入 <code>core/config.yaml</code>。当前支持 Clash/Mihomo YAML 订阅。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-card full">
+      <div class="section-head">
+        <div>
+          <h2>PAC 规则</h2>
+          <p class="subtitle small">支持 DOMAIN-SUFFIX / DOMAIN / DOMAIN-KEYWORD / IP-CIDR / MATCH。GEOIP 会被忽略。</p>
+        </div>
+        <button id="resetRulesBtn" class="ghost-btn">恢复默认</button>
+      </div>
+      <textarea id="pacRules" class="code-box" rows="18" spellcheck="false"></textarea>
+    </section>
+
+    <footer class="options-footer">
+      <button id="saveBtn" class="primary-btn">保存设置</button>
+      <button id="applyBtn" class="secondary-btn">立即应用</button>
+      <span id="saveMsg" class="hint"></span>
+    </footer>
+  </main>
+  <script src="clash-api.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
