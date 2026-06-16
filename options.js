@@ -19,6 +19,10 @@ const $ = (selector) => document.querySelector(selector);
 
 let subscriptions = [];
 let activeSubscriptionId = '';
+let profiles = [];
+let activeProfileId = '';
+let ruleEditorMode = 'gui'; // 'gui' | 'text'
+let guiRules = []; // parsed rules for GUI editor
 
 init().catch((error) => setMessage('#saveMsg', error.message, true));
 
@@ -26,6 +30,8 @@ async function init() {
   const settings = await getSettings();
   subscriptions = normalizeSubscriptions(settings.subscriptions, settings.subscriptionUrl);
   activeSubscriptionId = settings.activeSubscriptionId || subscriptions[0]?.id || '';
+  profiles = normalizeProfiles(settings.profiles);
+  activeProfileId = settings.activeProfileId || '';
 
   $('#proxyHost').value = settings.proxyHost;
   $('#proxyPort').value = settings.proxyPort;
@@ -36,7 +42,10 @@ async function init() {
   $('#updateSubscriptionBeforeStart').checked = settings.updateSubscriptionBeforeStart !== false;
   $('#allowLan').checked = Boolean(settings.allowLan);
   $('#pacRules').value = settings.pacRules.join('\n');
+  guiRules = parseRules(settings.pacRules);
+  renderRuleListGui();
   renderSubscriptions();
+  renderProfiles();
 
   $('#saveBtn').addEventListener('click', saveOptions);
   $('#applyBtn').addEventListener('click', async () => {
@@ -46,7 +55,9 @@ async function init() {
     setMessage('#saveMsg', '已保存并应用');
   });
   $('#resetRulesBtn').addEventListener('click', () => {
-    $('#pacRules').value = DEFAULT_RULES.join('\n');
+    guiRules = parseRules(DEFAULT_RULES);
+    syncGuiToText();
+    renderRuleListGui();
   });
   $('#testBtn').addEventListener('click', testController);
   $('#addSubBtn').addEventListener('click', addSubscription);
@@ -55,7 +66,362 @@ async function init() {
   $('#applyAllowLanBtn').addEventListener('click', applyAllowLan);
   $('#refreshActiveSubInfoBtn').addEventListener('click', refreshActiveSubscriptionInfo);
   $('#refreshAllSubInfoBtn').addEventListener('click', refreshAllSubscriptionInfo);
+  $('#refreshLogBtn').addEventListener('click', refreshLog);
+  $('#clearLogBtn')?.addEventListener('click', clearLogViewer);
+
+  // Rule GUI editor events
+  $('#addRuleBtn').addEventListener('click', addRuleFromGui);
+  $('#ruleValueInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') addRuleFromGui();
+  });
+  $('#ruleTypeSelect').addEventListener('change', onRuleTypeChange);
+  $('#toggleRuleEditorBtn').addEventListener('click', toggleRuleEditorMode);
+
+  // Profile events
+  $('#saveProfileBtn').addEventListener('click', saveCurrentProfile);
 }
+
+/* ── Rule GUI Editor ── */
+
+function parseRules(ruleLines) {
+  return (Array.isArray(ruleLines) ? ruleLines : [])
+    .map((line, index) => {
+      const clean = String(line || '').trim();
+      if (!clean || clean.startsWith('#')) return null;
+      const parts = clean.split(',').map((p) => p.trim());
+      const type = parts[0]?.toUpperCase() || '';
+      if (type === 'MATCH') return { type: 'MATCH', value: '', action: (parts[1] || 'DIRECT').toUpperCase(), index };
+      if (type === 'GEOIP') return { type: 'GEOIP', value: parts[1] || '', action: (parts[2] || 'DIRECT').toUpperCase(), index, ignored: true };
+      const value = parts[1] || '';
+      const action = (parts[2] || 'DIRECT').toUpperCase();
+      return { type, value, action, index };
+    })
+    .filter(Boolean);
+}
+
+function rulesToLines(rules) {
+  return rules
+    .filter((r) => !r.ignored)
+    .map((r) => {
+      if (r.type === 'MATCH') return `MATCH,${r.action}`;
+      return `${r.type},${r.value},${r.action}`;
+    });
+}
+
+function renderRuleListGui() {
+  const container = $('#ruleListGui');
+  container.innerHTML = '';
+
+  if (!guiRules.length) {
+    const empty = document.createElement('div');
+    empty.className = 'rule-empty';
+    empty.textContent = '暂无规则，请添加';
+    container.appendChild(empty);
+    return;
+  }
+
+  guiRules.forEach((rule, idx) => {
+    const row = document.createElement('div');
+    row.className = 'rule-row' + (rule.ignored ? ' rule-ignored' : '');
+    if (rule.action === 'PROXY') row.classList.add('rule-proxy');
+    else if (rule.action === 'DIRECT') row.classList.add('rule-direct');
+
+    const badge = document.createElement('span');
+    badge.className = 'rule-type-badge';
+    badge.textContent = rule.type;
+
+    const value = document.createElement('span');
+    value.className = 'rule-value';
+    value.textContent = rule.value || (rule.type === 'MATCH' ? '(全部)' : '');
+
+    const actionBadge = document.createElement('span');
+    actionBadge.className = 'rule-action-badge';
+    actionBadge.textContent = rule.action;
+
+    const actions = document.createElement('div');
+    actions.className = 'rule-row-actions';
+
+    if (idx > 0) {
+      const upBtn = document.createElement('button');
+      upBtn.className = 'ghost-btn rule-move-btn';
+      upBtn.textContent = '↑';
+      upBtn.title = '上移';
+      upBtn.addEventListener('click', () => moveRule(idx, -1));
+      actions.appendChild(upBtn);
+    }
+
+    if (idx < guiRules.length - 1) {
+      const downBtn = document.createElement('button');
+      downBtn.className = 'ghost-btn rule-move-btn';
+      downBtn.textContent = '↓';
+      downBtn.title = '下移';
+      downBtn.addEventListener('click', () => moveRule(idx, 1));
+      actions.appendChild(downBtn);
+    }
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'ghost-btn rule-toggle-btn';
+    toggleBtn.textContent = rule.action === 'PROXY' ? '→直连' : '→代理';
+    toggleBtn.title = '切换代理/直连';
+    toggleBtn.addEventListener('click', () => toggleRuleAction(idx));
+    actions.appendChild(toggleBtn);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'link-btn danger rule-del-btn';
+    delBtn.textContent = '✕';
+    delBtn.title = '删除';
+    delBtn.addEventListener('click', () => deleteRule(idx));
+    actions.appendChild(delBtn);
+
+    row.appendChild(badge);
+    row.appendChild(value);
+    row.appendChild(actionBadge);
+    row.appendChild(actions);
+    container.appendChild(row);
+  });
+}
+
+function addRuleFromGui() {
+  const type = $('#ruleTypeSelect').value;
+  const value = $('#ruleValueInput').value.trim();
+  const action = $('#ruleActionSelect').value;
+
+  if (type !== 'MATCH' && !value) {
+    setMessage('#saveMsg', '请输入规则值', true);
+    return;
+  }
+
+  guiRules.push({ type, value: type === 'MATCH' ? '' : value, action });
+  syncGuiToText();
+  renderRuleListGui();
+  $('#ruleValueInput').value = '';
+  setMessage('#saveMsg', '规则已添加');
+}
+
+function deleteRule(idx) {
+  guiRules.splice(idx, 1);
+  syncGuiToText();
+  renderRuleListGui();
+}
+
+function moveRule(idx, direction) {
+  const newIdx = idx + direction;
+  if (newIdx < 0 || newIdx >= guiRules.length) return;
+  [guiRules[idx], guiRules[newIdx]] = [guiRules[newIdx], guiRules[idx]];
+  syncGuiToText();
+  renderRuleListGui();
+}
+
+function toggleRuleAction(idx) {
+  const rule = guiRules[idx];
+  rule.action = rule.action === 'PROXY' ? 'DIRECT' : 'PROXY';
+  syncGuiToText();
+  renderRuleListGui();
+}
+
+function onRuleTypeChange() {
+  const type = $('#ruleTypeSelect').value;
+  const valueInput = $('#ruleValueInput');
+  const actionSelect = $('#ruleActionSelect');
+  if (type === 'MATCH') {
+    valueInput.disabled = true;
+    valueInput.placeholder = '(MATCH 无需值)';
+    actionSelect.disabled = false;
+  } else {
+    valueInput.disabled = false;
+    actionSelect.disabled = false;
+    if (type === 'IP-CIDR') valueInput.placeholder = '如 192.168.0.0/16';
+    else if (type === 'DOMAIN') valueInput.placeholder = '如 www.google.com';
+    else if (type === 'DOMAIN-KEYWORD') valueInput.placeholder = '如 google';
+    else valueInput.placeholder = '如 google.com';
+  }
+}
+
+function syncGuiToText() {
+  const lines = rulesToLines(guiRules);
+  $('#pacRules').value = lines.join('\n');
+}
+
+function syncTextToGui() {
+  const lines = $('#pacRules').value.split('\n').map((l) => l.trim()).filter(Boolean);
+  guiRules = parseRules(lines);
+  renderRuleListGui();
+}
+
+function toggleRuleEditorMode() {
+  if (ruleEditorMode === 'gui') {
+    syncGuiToText();
+    $('#ruleGuiEditor').style.display = 'none';
+    $('#ruleTextEditor').style.display = '';
+    $('#toggleRuleEditorBtn').textContent = 'GUI 模式';
+    ruleEditorMode = 'text';
+  } else {
+    syncTextToGui();
+    $('#ruleGuiEditor').style.display = '';
+    $('#ruleTextEditor').style.display = 'none';
+    $('#toggleRuleEditorBtn').textContent = '文本模式';
+    ruleEditorMode = 'gui';
+  }
+}
+
+/* ── Profile Management ── */
+
+function renderProfiles() {
+  const list = $('#profileList');
+  list.innerHTML = '';
+
+  if (!profiles.length) {
+    const empty = document.createElement('div');
+    empty.className = 'profile-empty';
+    empty.textContent = '暂无保存的配置，点击下方「保存当前配置」创建';
+    list.appendChild(empty);
+    return;
+  }
+
+  profiles.forEach((p) => {
+    const card = document.createElement('div');
+    card.className = 'profile-item' + (p.id === activeProfileId ? ' profile-active' : '');
+
+    const info = document.createElement('div');
+    info.className = 'profile-info';
+
+    const name = document.createElement('strong');
+    name.textContent = p.name;
+
+    const meta = document.createElement('small');
+    const parts = [p.mode, `${p.proxyHost}:${p.proxyPort}`, p.proxyType];
+    if (p.pacRules?.length) parts.push(`${p.pacRules.length} 条规则`);
+    meta.textContent = parts.join(' · ');
+
+    info.appendChild(name);
+    info.appendChild(meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'profile-actions';
+
+    const loadBtn = document.createElement('button');
+    loadBtn.className = 'secondary-btn';
+    loadBtn.textContent = '加载';
+    loadBtn.addEventListener('click', () => loadProfileById(p.id));
+
+    const updateBtn = document.createElement('button');
+    updateBtn.className = 'ghost-btn';
+    updateBtn.textContent = '更新';
+    updateBtn.title = '用当前设置覆盖此配置';
+    updateBtn.addEventListener('click', () => updateProfileById(p.id));
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'link-btn danger';
+    delBtn.textContent = '删除';
+    delBtn.addEventListener('click', () => deleteProfileById(p.id));
+
+    actions.append(loadBtn, updateBtn, delBtn);
+    card.append(info, actions);
+    list.appendChild(card);
+  });
+}
+
+async function saveCurrentProfile() {
+  const name = $('#profileName').value.trim();
+  if (!name) return setMessage('#profileMsg', '请输入配置名称', true);
+
+  const settings = await getSettings();
+  // Sync current form values to settings first
+  settings.proxyHost = $('#proxyHost').value.trim() || '127.0.0.1';
+  settings.proxyPort = Number($('#proxyPort').value || 7890);
+  settings.proxyType = $('#proxyType').value;
+  settings.bypassList = $('#bypassList').value.trim();
+  settings.controllerUrl = $('#controllerUrl').value.trim() || 'http://127.0.0.1:9090';
+  settings.controllerSecret = $('#controllerSecret').value;
+  settings.allowLan = $('#allowLan').checked;
+  settings.pacRules = getCurrentPacRules();
+  settings.mode = 'rule';
+  settings.activeGroup = 'GLOBAL';
+  settings.activeSubscriptionId = getActiveSubscription()?.id || '';
+
+  const id = await saveAsProfile(name, settings);
+  profiles = normalizeProfiles((await getSettings()).profiles);
+  activeProfileId = (await getSettings()).activeProfileId;
+  renderProfiles();
+  $('#profileName').value = '';
+  setMessage('#profileMsg', `配置「${name}」已保存`);
+}
+
+async function loadProfileById(id) {
+  try {
+    const settings = await getSettings();
+    await loadProfile(id, settings);
+    const updated = await getSettings();
+    activeProfileId = updated.activeProfileId;
+
+    // Update form
+    $('#proxyHost').value = updated.proxyHost;
+    $('#proxyPort').value = updated.proxyPort;
+    $('#proxyType').value = updated.proxyType;
+    $('#bypassList').value = updated.bypassList;
+    $('#controllerUrl').value = updated.controllerUrl;
+    $('#controllerSecret').value = updated.controllerSecret;
+    $('#allowLan').checked = updated.allowLan;
+    $('#pacRules').value = updated.pacRules.join('\n');
+    guiRules = parseRules(updated.pacRules);
+    renderRuleListGui();
+
+    if (updated.activeSubscriptionId) {
+      activeSubscriptionId = updated.activeSubscriptionId;
+      subscriptions = normalizeSubscriptions(updated.subscriptions, updated.subscriptionUrl);
+      renderSubscriptions();
+    }
+
+    renderProfiles();
+    setMessage('#profileMsg', `已加载配置「${profiles.find(p => p.id === id)?.name || id}」`);
+  } catch (error) {
+    setMessage('#profileMsg', `加载失败：${error.message}`, true);
+  }
+}
+
+async function updateProfileById(id) {
+  try {
+    const settings = await getSettings();
+    settings.proxyHost = $('#proxyHost').value.trim() || '127.0.0.1';
+    settings.proxyPort = Number($('#proxyPort').value || 7890);
+    settings.proxyType = $('#proxyType').value;
+    settings.bypassList = $('#bypassList').value.trim();
+    settings.controllerUrl = $('#controllerUrl').value.trim() || 'http://127.0.0.1:9090';
+    settings.controllerSecret = $('#controllerSecret').value;
+    settings.allowLan = $('#allowLan').checked;
+    settings.pacRules = getCurrentPacRules();
+    settings.mode = 'rule';
+    settings.activeGroup = 'GLOBAL';
+    settings.activeSubscriptionId = getActiveSubscription()?.id || '';
+
+    await updateProfile(id, settings);
+    profiles = normalizeProfiles((await getSettings()).profiles);
+    renderProfiles();
+    setMessage('#profileMsg', `配置已更新`);
+  } catch (error) {
+    setMessage('#profileMsg', `更新失败：${error.message}`, true);
+  }
+}
+
+async function deleteProfileById(id) {
+  const settings = await getSettings();
+  await deleteProfile(id, settings);
+  profiles = normalizeProfiles((await getSettings()).profiles);
+  activeProfileId = (await getSettings()).activeProfileId;
+  renderProfiles();
+  setMessage('#profileMsg', '配置已删除');
+}
+
+function getCurrentPacRules() {
+  if (ruleEditorMode === 'gui') {
+    syncGuiToText();
+  } else {
+    syncTextToGui();
+  }
+  return $('#pacRules').value.split('\n').map((l) => l.trim()).filter(Boolean);
+}
+
+/* ── Subscriptions ── */
 
 function normalizeSubscriptions(value, legacyUrl = '') {
   const list = Array.isArray(value) ? value : [];
@@ -226,10 +592,7 @@ async function saveOptions() {
     return;
   }
 
-  const pacRules = $('#pacRules').value
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const pacRules = getCurrentPacRules();
 
   const active = getActiveSubscription();
   await setSettings({
@@ -244,7 +607,9 @@ async function saveOptions() {
     subscriptionUrl: active?.url || '',
     updateSubscriptionBeforeStart: $('#updateSubscriptionBeforeStart').checked,
     allowLan: $('#allowLan').checked,
-    pacRules
+    pacRules,
+    profiles: normalizeProfiles(profiles),
+    activeProfileId
   });
   setMessage('#saveMsg', '已保存');
 }
@@ -381,6 +746,24 @@ function formatDateTime(timestamp) {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return '未知';
   return date.toLocaleString('zh-CN', { hour12: false });
+}
+
+async function refreshLog() {
+  try {
+    setMessage('#logStatus', '正在读取日志...');
+    const res = await sendRuntimeMessage({ type: 'MIHOMO_GET_LOG' });
+    if (!res?.ok) throw new Error(res?.error || '读取日志失败');
+    $('#logViewer').value = res.log || '(空)';
+    setMessage('#logStatus', `日志路径：${res.logPath || '未知'}`);
+  } catch (error) {
+    setMessage('#logStatus', `读取日志失败：${error.message}`, true);
+    $('#logViewer').value = '';
+  }
+}
+
+function clearLogViewer() {
+  $('#logViewer').value = '';
+  setMessage('#logStatus', '');
 }
 
 async function testController() {

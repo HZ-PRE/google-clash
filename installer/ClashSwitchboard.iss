@@ -14,7 +14,7 @@ DefaultDirName={localappdata}\ClashSwitchboard
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=dist
-OutputBaseFilename=ClashSwitchboardSetup
+OutputBaseFilename=ClashSwitchboardSetup-v1
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -23,7 +23,7 @@ ArchitecturesInstallIn64BitMode=x64
 UninstallDisplayName={#MyAppName}
 
 [Languages]
-Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面说明快捷方式"; GroupDescription: "附加选项:"; Flags: unchecked
@@ -41,7 +41,7 @@ Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\icons\*"; DestDir: "{app}\extension\icons"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\native-host\clash-switchboard-host.exe"; DestDir: "{app}\native-host"; Flags: ignoreversion
 Source: "..\core\nb-mihomo.exe"; DestDir: "{app}\core"; Flags: ignoreversion
-Source: "..\core\config.yaml"; DestDir: "{app}\core"; Flags: ignoreversion onlyifdoesntexist
+Source: "..\installer\enable-enterprise-install.bat"; DestDir: "{app}\installer"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\使用说明"; Filename: "{app}\README.md"
@@ -51,10 +51,6 @@ Name: "{autodesktop}\Clash Switchboard 使用说明"; Filename: "{app}\README.md
 Root: HKCU; Subkey: "Software\Google\Chrome\NativeMessagingHosts\{#NativeHostName}"; ValueType: string; ValueName: ""; ValueData: "{app}\native-host\{#NativeHostName}.json"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Google\Chrome\Extensions\{#ExtensionId}"; ValueType: string; ValueName: "path"; ValueData: "{app}\extension\manifest.json"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Google\Chrome\Extensions\{#ExtensionId}"; ValueType: string; ValueName: "version"; ValueData: "{#MyAppVersion}"; Flags: uninsdeletekey
-
-[Run]
-Filename: "{cmd}"; Parameters: "/c taskkill /IM chrome.exe /F"; Description: "重启 Chrome 以加载插件"; Flags: runhidden skipifdoesntexist unchecked
-Filename: "chrome.exe"; Parameters: "chrome://extensions/"; Description: "打开 Chrome 扩展管理页"; Flags: postinstall nowait skipifsilent unchecked
 
 [Code]
 function InitializeSetup(): Boolean;

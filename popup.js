@@ -3,6 +3,7 @@ const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 let currentSettings = null;
 let groups = [];
+let allProxies = null;
 
 init().catch((error) => showControllerMessage(error.message, true));
 
@@ -33,19 +34,8 @@ function bindEvents() {
     });
   });
 
-  ['proxyType', 'proxyHost', 'proxyPort'].forEach((id) => {
-    $(`#${id}`).addEventListener('change', saveQuickSettings);
-    $(`#${id}`).addEventListener('input', debounce(saveQuickSettings, 500));
-  });
-
   $('#vpnBtn').addEventListener('click', startVpn);
   $('#stopVpnBtn').addEventListener('click', stopVpn);
-  $('#refreshBtn').addEventListener('click', refreshGroups);
-  $('#groupSelect').addEventListener('change', async () => {
-    await setSettings({ activeGroup: $('#groupSelect').value });
-    renderNodesForGroup($('#groupSelect').value);
-  });
-  $('#switchNodeBtn').addEventListener('click', switchNode);
   $('#updateSubPopupBtn').addEventListener('click', updateSubscriptionFromPopup);
   $('#allowLanBtn').addEventListener('click', toggleAllowLan);
   $('#optionsBtn').addEventListener('click', () => chrome.runtime.openOptionsPage());
@@ -56,72 +46,334 @@ function bindEvents() {
     renderSettings(currentSettings);
     updateStatus();
   });
+  $('#speedTestAllBtn').addEventListener('click', speedTestAllGroups);
+  $('#autoSelectAllBtn').addEventListener('click', autoSelectAllGroups);
+  $('#profileSelect').addEventListener('change', onProfileChange);
 }
 
 function renderSettings(settings) {
   $('#enabled').checked = Boolean(settings.enabled);
-  $('#proxyType').value = settings.proxyType;
-  $('#proxyHost').value = settings.proxyHost;
-  $('#proxyPort').value = settings.proxyPort;
   $('#allowLanBtn').textContent = settings.allowLan ? '局域网：开启' : '局域网：关闭';
-
-
   $$('.mode-btn').forEach((button) => {
     button.classList.toggle('active', button.dataset.mode === settings.mode);
   });
+  renderProfileSelect(settings);
 }
 
-async function saveQuickSettings() {
-  const patch = {
-    proxyType: $('#proxyType').value,
-    proxyHost: $('#proxyHost').value.trim() || '127.0.0.1',
-    proxyPort: Number($('#proxyPort').value || 7890)
-  };
-  await setSettings(patch);
-  currentSettings = await getSettings();
-  updateStatus();
+function renderProfileSelect(settings) {
+  const select = $('#profileSelect');
+  select.innerHTML = '<option value="">-- 配置 Profile --</option>';
+  const profiles = normalizeProfiles(settings.profiles);
+  profiles.forEach((p) => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.name;
+    if (p.id === settings.activeProfileId) opt.selected = true;
+    select.appendChild(opt);
+  });
+}
+
+async function onProfileChange(e) {
+  const id = e.target.value;
+  if (!id) return;
+  try {
+    showControllerMessage('正在切换配置...');
+    await loadProfile(id, currentSettings);
+    currentSettings = await getSettings();
+    renderSettings(currentSettings);
+    await sendRuntimeMessage({ type: 'APPLY_PROXY' });
+    showControllerMessage(`已切换到配置：${currentSettings.activeProfileId ? (normalizeProfiles(currentSettings.profiles).find(p => p.id === currentSettings.activeProfileId)?.name || '') : ''}`);
+    await refreshGroups();
+  } catch (error) {
+    showControllerMessage(`切换配置失败：${error.message}`, true);
+  }
 }
 
 async function refreshGroups() {
   try {
-    showControllerMessage('正在读取 Clash 代理组...');
     groups = await getProxyGroups();
-    renderGroups();
-    showControllerMessage(`已读取 ${groups.length} 个代理组`);
+    try { allProxies = await getAllProxies(); } catch (_) { allProxies = null; }
+    renderGroupCards();
+    showControllerMessage(`${groups.length} 个代理组`);
   } catch (error) {
     groups = [];
-    renderGroups();
+    allProxies = null;
+    renderGroupCards();
     showControllerMessage(`连接 Clash Controller 失败：${error.message}`, true);
   }
 }
 
-function renderGroups() {
-  const groupSelect = $('#groupSelect');
-  groupSelect.innerHTML = '';
+function renderGroupCards() {
+  const section = $('#proxyGroupsList');
+  section.innerHTML = '';
+
   if (!groups.length) {
-    groupSelect.append(new Option('未读取到代理组', ''));
-    $('#nodeSelect').innerHTML = '';
-    $('#nodeSelect').append(new Option('无节点', ''));
+    const empty = document.createElement('div');
+    empty.className = 'group-empty';
+    empty.textContent = '未读取到代理组';
+    section.appendChild(empty);
     return;
   }
 
-  groups.forEach((group) => groupSelect.append(new Option(group.name, group.name)));
-  const preferred = currentSettings?.activeGroup;
-  if (preferred && groups.some((group) => group.name === preferred)) groupSelect.value = preferred;
-  renderNodesForGroup(groupSelect.value);
+  groups.forEach((group) => {
+    const card = document.createElement('div');
+    card.className = 'group-card';
+
+    const head = document.createElement('div');
+    head.className = 'group-head';
+
+    const info = document.createElement('div');
+    info.className = 'group-info';
+    const title = document.createElement('strong');
+    title.textContent = group.name;
+    const current = document.createElement('small');
+    current.id = `group-now-${escapeId(group.name)}`;
+    updateGroupCurrentText(group, current);
+    info.appendChild(title);
+    info.appendChild(current);
+
+    const actions = document.createElement('div');
+    actions.className = 'group-head-actions';
+
+    const speedBtn = document.createElement('button');
+    speedBtn.className = 'ghost-btn';
+    speedBtn.textContent = '测速';
+    speedBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      speedTestGroup(group.name);
+    });
+
+    const autoBtn = document.createElement('button');
+    autoBtn.className = 'ghost-btn auto-select-btn';
+    autoBtn.textContent = '自动选优';
+    autoBtn.title = '测速并自动选择最低延迟节点';
+    autoBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      autoSelectBestNode(group.name);
+    });
+
+    actions.appendChild(speedBtn);
+    actions.appendChild(autoBtn);
+    head.appendChild(info);
+    head.appendChild(actions);
+
+    const nodeList = document.createElement('div');
+    nodeList.className = 'group-nodes';
+    nodeList.id = `group-nodes-${escapeId(group.name)}`;
+    renderGroupNodes(group, nodeList);
+
+    card.appendChild(head);
+    card.appendChild(nodeList);
+    section.appendChild(card);
+  });
 }
 
-function renderNodesForGroup(groupName) {
-  const nodeSelect = $('#nodeSelect');
-  nodeSelect.innerHTML = '';
-  const group = groups.find((item) => item.name === groupName);
-  if (!group) {
-    nodeSelect.append(new Option('无节点', ''));
+function updateGroupCurrentText(group, el) {
+  const node = group.now || 'N/A';
+  const delay = getNodeDelay(group.name, node);
+  const delayText = delay !== null ? ` · ${delay}ms` : '';
+  el.textContent = `当前：${node}${delayText}`;
+  el.dataset.node = node;
+}
+
+function getNodeDelay(groupName, nodeName) {
+  if (!allProxies?.proxies) return null;
+  const proxy = allProxies.proxies[nodeName];
+  if (!proxy || !proxy.history || !proxy.history.length) return null;
+  return proxy.history[proxy.history.length - 1].delay;
+}
+
+function renderGroupNodes(group, container) {
+  container.innerHTML = '';
+  if (!group.all || !group.all.length) {
+    container.innerHTML = '<div class="node-item"><span class="node-name">无节点</span></div>';
     return;
   }
-  group.all.forEach((node) => nodeSelect.append(new Option(node, node)));
-  if (group.now && group.all.includes(group.now)) nodeSelect.value = group.now;
+
+  const nodes = group.all.map((name) => ({ name, delay: getNodeDelay(group.name, name) }));
+  nodes.sort((a, b) => {
+    if (a.delay === null && b.delay === null) return 0;
+    if (a.delay === null) return 1;
+    if (b.delay === null) return -1;
+    return a.delay - b.delay;
+  });
+
+  nodes.forEach(({ name, delay }) => {
+    const row = document.createElement('div');
+    row.className = 'node-item';
+    if (group.now === name) row.classList.add('node-active');
+
+    const dot = document.createElement('span');
+    dot.className = 'node-dot';
+    dot.classList.add(delayColor(delay));
+    dot.textContent = '●';
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'node-name';
+    nameEl.textContent = name;
+
+    const delayEl = document.createElement('span');
+    delayEl.className = 'node-delay';
+    delayEl.textContent = delay !== null ? `${delay}ms` : '-';
+
+    const switchBtn = document.createElement('button');
+    switchBtn.className = 'node-switch-btn';
+    switchBtn.textContent = group.now === name ? '当前' : '切换';
+    switchBtn.disabled = group.now === name;
+    switchBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      switchNode(group.name, name);
+    });
+
+    row.appendChild(dot);
+    row.appendChild(nameEl);
+    row.appendChild(delayEl);
+    row.appendChild(switchBtn);
+    container.appendChild(row);
+  });
 }
+
+function delayColor(ms) {
+  if (ms === null) return 'delay-none';
+  if (ms < 200) return 'delay-fast';
+  if (ms < 500) return 'delay-mid';
+  return 'delay-slow';
+}
+
+/* ── Speed test ── */
+
+async function speedTestGroup(groupName) {
+  showControllerMessage(`正在测速 ${groupName} ...`);
+  try {
+    await testProxyDelay(groupName);
+    allProxies = await getAllProxies();
+    const container = document.getElementById(`group-nodes-${escapeId(groupName)}`);
+    const group = groups.find((g) => g.name === groupName);
+    if (group && container) renderGroupNodes(group, container);
+    const currentEl = document.getElementById(`group-now-${escapeId(groupName)}`);
+    if (group && currentEl) updateGroupCurrentText(group, currentEl);
+    showControllerMessage(`${groupName} 测速完成`);
+  } catch (error) {
+    showControllerMessage(`测速失败：${error.message}`, true);
+  }
+}
+
+async function speedTestAllGroups() {
+  if (!groups.length) return;
+  showControllerMessage(`正在测速 ${groups.length} 个组...`);
+  let done = 0;
+  for (const group of groups) {
+    try {
+      await testProxyDelay(group.name);
+      done++;
+    } catch (_) {}
+  }
+  allProxies = await getAllProxies();
+  renderGroupCards();
+  showControllerMessage(`测速完成：${done}/${groups.length}`);
+}
+
+/* ── Auto select lowest delay ── */
+
+async function autoSelectBestNode(groupName) {
+  const group = groups.find((g) => g.name === groupName);
+  if (!group || !group.all?.length) {
+    showControllerMessage(`${groupName} 无可用节点`, true);
+    return;
+  }
+
+  showControllerMessage(`${groupName} 测速中...`);
+  try {
+    await testProxyDelay(groupName);
+  } catch (_) {
+    // Some nodes may fail, continue with partial results
+  }
+
+  allProxies = await getAllProxies();
+  const proxyData = allProxies?.proxies || {};
+
+  let bestNode = null;
+  let bestDelay = Infinity;
+
+  for (const nodeName of group.all) {
+    const proxy = proxyData[nodeName];
+    if (!proxy || !proxy.history || !proxy.history.length) continue;
+    const lastDelay = proxy.history[proxy.history.length - 1].delay;
+    if (lastDelay > 0 && lastDelay < bestDelay) {
+      bestDelay = lastDelay;
+      bestNode = nodeName;
+    }
+  }
+
+  if (!bestNode) {
+    showControllerMessage(`${groupName} 无可用节点（全部超时）`, true);
+    renderGroupCards();
+    return;
+  }
+
+  try {
+    await selectClashNode(groupName, bestNode);
+    await refreshGroups();
+    showControllerMessage(`${groupName} → ${bestNode} (${bestDelay}ms)`);
+  } catch (error) {
+    showControllerMessage(`自动选择失败：${error.message}`, true);
+  }
+}
+
+async function autoSelectAllGroups() {
+  if (!groups.length) return;
+  showControllerMessage(`正在为 ${groups.length} 个组自动选优...`);
+  let switched = 0;
+
+  for (const group of groups) {
+    try {
+      await testProxyDelay(group.name);
+    } catch (_) {}
+
+    allProxies = await getAllProxies();
+    const proxyData = allProxies?.proxies || {};
+
+    let bestNode = null;
+    let bestDelay = Infinity;
+
+    for (const nodeName of group.all) {
+      const proxy = proxyData[nodeName];
+      if (!proxy || !proxy.history || !proxy.history.length) continue;
+      const lastDelay = proxy.history[proxy.history.length - 1].delay;
+      if (lastDelay > 0 && lastDelay < bestDelay) {
+        bestDelay = lastDelay;
+        bestNode = nodeName;
+      }
+    }
+
+    if (bestNode && bestNode !== group.now) {
+      try {
+        await selectClashNode(group.name, bestNode);
+        switched++;
+      } catch (_) {}
+    }
+  }
+
+  await refreshGroups();
+  showControllerMessage(`自动选优完成，切换了 ${switched} 个组`);
+}
+
+async function switchNode(groupName, nodeName) {
+  try {
+    await selectClashNode(groupName, nodeName);
+    await setSettings({ activeGroup: groupName });
+    showControllerMessage(`已切换：${groupName} → ${nodeName}`);
+    await refreshGroups();
+  } catch (error) {
+    showControllerMessage(`切换失败：${error.message}`, true);
+  }
+}
+
+function escapeId(name) {
+  return String(name).replace(/[^a-zA-Z0-9-_]/g, '_');
+}
+
+/* ── VPN controls ── */
 
 async function startVpn() {
   setVpnBusy(true);
@@ -205,20 +457,6 @@ async function updateSubscriptionFromPopup() {
   }
 }
 
-async function switchNode() {
-  const group = $('#groupSelect').value;
-  const node = $('#nodeSelect').value;
-  if (!group || !node) return showControllerMessage('请选择代理组和节点', true);
-  try {
-    await selectClashNode(group, node);
-    await setSettings({ activeGroup: group });
-    showControllerMessage(`已切换：${group} → ${node}`);
-    await refreshGroups();
-  } catch (error) {
-    showControllerMessage(`切换失败：${error.message}`, true);
-  }
-}
-
 function updateStatus() {
   const dot = $('#statusDot');
   const title = $('#statusTitle');
@@ -226,21 +464,11 @@ function updateStatus() {
   const settings = currentSettings;
   dot.classList.toggle('on', settings.enabled && settings.mode !== 'direct');
   title.textContent = settings.enabled && settings.mode !== 'direct' ? '浏览器代理已启用' : '浏览器直连';
-  text.textContent = settings.enabled && settings.mode !== 'direct'
-    ? `${settings.mode.toUpperCase()} · ${settings.proxyType}://${settings.proxyHost}:${settings.proxyPort}`
-    : 'Chrome 未使用插件代理';
+  text.textContent = 'Clash Switchboard';
 }
 
 function showControllerMessage(message, error = false) {
   const el = $('#controllerMsg');
   el.textContent = message;
   el.classList.toggle('error', error);
-}
-
-function debounce(fn, delay) {
-  let timer = null;
-  return (...args) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), delay);
-  };
 }

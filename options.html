@@ -16,6 +16,22 @@
       </div>
     </header>
 
+    <!-- ── Profile Section ── -->
+    <section class="settings-card full">
+      <div class="section-head">
+        <div>
+          <h2>配置 Profile</h2>
+          <p class="subtitle small">保存和切换多套代理配置（模式、规则、订阅等）</p>
+        </div>
+      </div>
+      <div id="profileList" class="profile-list"></div>
+      <div class="profile-form">
+        <input id="profileName" type="text" placeholder="配置名称，如：办公 / 流媒体 / 开发" />
+        <button id="saveProfileBtn" class="secondary-btn">保存当前配置</button>
+      </div>
+      <p id="profileMsg" class="hint"></p>
+    </section>
+
     <section class="settings-grid">
       <div class="settings-card">
         <h2>代理入口</h2>
@@ -108,12 +124,54 @@
     <section class="settings-card full">
       <div class="section-head">
         <div>
+          <h2>Mihomo 日志</h2>
+          <p class="subtitle small">查看 mihomo.log 的最近内容</p>
+        </div>
+        <div>
+          <button id="refreshLogBtn" class="secondary-btn">查看日志</button>
+        </div>
+      </div>
+      <p id="logStatus" class="hint"></p>
+      <textarea id="logViewer" class="code-box log-box" rows="14" readonly spellcheck="false"></textarea>
+    </section>
+
+    <!-- ── PAC Rules GUI Editor ── -->
+    <section class="settings-card full">
+      <div class="section-head">
+        <div>
           <h2>PAC 规则</h2>
           <p class="subtitle small">支持 DOMAIN-SUFFIX / DOMAIN / DOMAIN-KEYWORD / IP-CIDR / MATCH。GEOIP 会被忽略。</p>
         </div>
-        <button id="resetRulesBtn" class="ghost-btn">恢复默认</button>
+        <div class="section-head-actions">
+          <button id="toggleRuleEditorBtn" class="ghost-btn">文本模式</button>
+          <button id="resetRulesBtn" class="ghost-btn">恢复默认</button>
+        </div>
       </div>
-      <textarea id="pacRules" class="code-box" rows="18" spellcheck="false"></textarea>
+
+      <!-- GUI Editor -->
+      <div id="ruleGuiEditor" class="rule-gui-editor">
+        <div class="rule-add-bar">
+          <select id="ruleTypeSelect" class="rule-type-select">
+            <option value="DOMAIN-SUFFIX">DOMAIN-SUFFIX</option>
+            <option value="DOMAIN">DOMAIN</option>
+            <option value="DOMAIN-KEYWORD">DOMAIN-KEYWORD</option>
+            <option value="IP-CIDR">IP-CIDR</option>
+            <option value="MATCH">MATCH</option>
+          </select>
+          <input id="ruleValueInput" type="text" placeholder="值（如 google.com / 192.168.0.0/16）" class="rule-value-input" />
+          <select id="ruleActionSelect" class="rule-action-select">
+            <option value="PROXY">PROXY</option>
+            <option value="DIRECT">DIRECT</option>
+          </select>
+          <button id="addRuleBtn" class="secondary-btn">添加</button>
+        </div>
+        <div id="ruleListGui" class="rule-list-gui"></div>
+      </div>
+
+      <!-- Text Editor (hidden by default) -->
+      <div id="ruleTextEditor" class="rule-text-editor" style="display:none">
+        <textarea id="pacRules" class="code-box" rows="18" spellcheck="false"></textarea>
+      </div>
     </section>
 
     <footer class="options-footer">

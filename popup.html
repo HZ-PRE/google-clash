@@ -39,46 +39,24 @@
       <button data-mode="direct" class="mode-btn">直连</button>
     </section>
 
-    <section class="grid-two">
-      <label class="field">
-        <span>代理类型</span>
-        <select id="proxyType">
-          <option value="mixed">Mixed/HTTP</option>
-          <option value="http">HTTP</option>
-          <option value="socks5">SOCKS5</option>
-        </select>
-      </label>
-      <label class="field">
-        <span>端口</span>
-        <input id="proxyPort" type="number" min="1" max="65535" />
-      </label>
+    <section class="quick-row">
+      <button id="updateSubPopupBtn" class="secondary-btn">更新订阅</button>
+      <button id="allowLanBtn" class="secondary-btn">局域网：关闭</button>
     </section>
 
-    <label class="field">
-      <span>代理地址</span>
-      <input id="proxyHost" type="text" placeholder="127.0.0.1" />
-    </label>
+    <section class="profile-row">
+      <select id="profileSelect" class="profile-select">
+        <option value="">-- 配置 Profile --</option>
+      </select>
+    </section>
 
-    <section class="controller-card">
-      <div class="section-head">
-        <div>
-          <p class="eyebrow">External Controller</p>
-          <h2>节点切换</h2>
-        </div>
-        <button id="refreshBtn" class="ghost-btn">刷新</button>
+    <section class="proxy-groups-section">
+      <div class="proxy-groups-toolbar">
+        <button id="speedTestAllBtn" class="ghost-btn">全部测速</button>
+        <button id="autoSelectAllBtn" class="ghost-btn">全部自动选优</button>
       </div>
-      <label class="field">
-        <span>代理组</span>
-        <select id="groupSelect"></select>
-      </label>
-      <label class="field">
-        <span>节点</span>
-        <select id="nodeSelect"></select>
-      </label>
-      <button id="switchNodeBtn" class="primary-btn">切换节点</button>
-      <button id="updateSubPopupBtn" class="secondary-btn inline-full">更新订阅</button>
-      <button id="allowLanBtn" class="secondary-btn inline-full">局域网：关闭</button>
-      <p id="controllerMsg" class="hint"></p>
+      <p class="hint" id="controllerMsg">正在读取代理组...</p>
+      <div id="proxyGroupsList"></div>
     </section>
 
     <footer>

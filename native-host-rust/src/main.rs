@@ -8,6 +8,8 @@ struct Request {
     kind: String,
     url: Option<String>,
     allow_lan: Option<String>,
+    proxy_port: Option<u16>,
+    controller: Option<String>,
 }
 
 struct HostStatus {
@@ -45,9 +47,16 @@ fn run() -> Result<String, String> {
         "stop" => stop(&paths),
         "restart" => { let _ = stop(&paths); start(&paths) }
         "status" => status_json(&paths, None),
-        "updateSubscription" => update_subscription(&paths, request.url.as_deref(), parse_allow_lan(request.allow_lan.as_deref())),
+        "updateSubscription" => update_subscription(
+            &paths,
+            request.url.as_deref(),
+            parse_allow_lan(request.allow_lan.as_deref()),
+            request.proxy_port.unwrap_or(7890),
+            request.controller.as_deref(),
+        ),
         "getSubscriptionInfo" => get_subscription_info(request.url.as_deref()),
         "setAllowLan" => set_allow_lan(&paths, parse_allow_lan(request.allow_lan.as_deref())),
+        "getLog" => get_log(&paths),
         other => Ok(format!("{{\"ok\":false,\"error\":\"{}\"}}", escape_json(&format!("Unknown command: {}", other)))),
     }
 }
@@ -90,7 +99,9 @@ fn parse_request(raw: &str) -> Result<Request, String> {
     let kind = parse_json_string_field(raw, "type")?.ok_or_else(|| "Native Message missing type".to_string())?;
     let url = parse_json_string_field(raw, "url")?;
     let allow_lan = parse_json_string_or_bool_field(raw, "allowLan")?;
-    Ok(Request { kind, url, allow_lan })
+    let proxy_port = parse_json_u16_field(raw, "proxyPort")?;
+    let controller = parse_json_string_field(raw, "controller")?;
+    Ok(Request { kind, url, allow_lan, proxy_port, controller })
 }
 
 fn parse_json_string_field(raw: &str, field: &str) -> Result<Option<String>, String> {
@@ -115,6 +126,19 @@ fn parse_json_string_or_bool_field(raw: &str, field: &str) -> Result<Option<Stri
     if after_colon.starts_with("null") { return Ok(None); }
     if after_colon.starts_with('"') { return Ok(Some(parse_json_string(after_colon)?)); }
     Err(format!("{} must be boolean or string", field))
+}
+
+fn parse_json_u16_field(raw: &str, field: &str) -> Result<Option<u16>, String> {
+    let needle = format!("\"{}\"", field);
+    let Some(key_pos) = raw.find(&needle) else { return Ok(None); };
+    let after_key = &raw[key_pos + needle.len()..];
+    let colon_pos = after_key.find(':').ok_or_else(|| format!("{} format error", field))?;
+    let after_colon = after_key[colon_pos + 1..].trim_start();
+    if after_colon.starts_with("null") { return Ok(None); }
+    let end = after_colon.find(|c: char| !c.is_ascii_digit()).unwrap_or(after_colon.len());
+    let num_str = &after_colon[..end];
+    if num_str.is_empty() { return Ok(None); }
+    Ok(Some(num_str.parse::<u16>().map_err(|_| format!("{} must be a valid port number", field))?))
 }
 
 fn parse_json_string(input: &str) -> Result<String, String> {
@@ -146,16 +170,16 @@ fn parse_allow_lan(value: Option<&str>) -> bool {
 fn ensure_default_config(paths: &AppPaths) -> Result<(), String> {
     if paths.config_path.exists() { return Ok(()); }
     fs::create_dir_all(&paths.config_dir).map_err(|e| format!("Failed to create core directory: {}", e))?;
-    fs::write(&paths.config_path, default_config(false)).map_err(|e| format!("Failed to write default config: {}", e))
+    fs::write(&paths.config_path, default_config(false, 7890, "127.0.0.1:9090")).map_err(|e| format!("Failed to write default config: {}", e))
 }
 
-fn default_config(allow_lan: bool) -> String {
+fn default_config(allow_lan: bool, proxy_port: u16, controller: &str) -> String {
     [
-        "mixed-port: 7890".to_string(),
+        format!("mixed-port: {}", proxy_port),
         format!("allow-lan: {}", allow_lan),
         "mode: rule".to_string(),
         "log-level: info".to_string(),
-        "external-controller: 127.0.0.1:9090".to_string(),
+        format!("external-controller: {}", controller),
         "secret: \"\"".to_string(),
         "".to_string(),
         "proxies: []".to_string(),
@@ -170,27 +194,24 @@ fn default_config(allow_lan: bool) -> String {
     ].join("\n")
 }
 
-fn update_subscription(paths: &AppPaths, url: Option<&str>, allow_lan: bool) -> Result<String, String> {
+fn update_subscription(paths: &AppPaths, url: Option<&str>, allow_lan: bool, proxy_port: u16, controller: Option<&str>) -> Result<String, String> {
     let url = url.map(str::trim).filter(|s| !s.is_empty()).ok_or_else(|| "Subscription URL is empty".to_string())?;
     if !(url.starts_with("http://") || url.starts_with("https://")) { return Err("Subscription URL must start with http:// or https://".to_string()); }
     fs::create_dir_all(&paths.config_dir).map_err(|e| format!("Failed to create core directory: {}", e))?;
+    let controller = controller.unwrap_or("127.0.0.1:9090");
 
     let ps = format!(
         "$ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -TimeoutSec 30 -Uri '{}' -OutFile '{}'",
         escape_powershell_single(url),
         escape_powershell_single(&display(&paths.subscription_path))
     );
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps])
-        .output()
-        .map_err(|e| format!("Failed to call PowerShell: {}", e))?;
+    let output = Command::new("powershell").args(["-NoProfile","-ExecutionPolicy","Bypass","-Command",&ps]).output().map_err(|e| format!("Failed to call PowerShell: {}", e))?;
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(format!("Failed to download subscription: {}", if err.is_empty() { "PowerShell returned failure".to_string() } else { err }));
     }
-
     let raw = fs::read_to_string(&paths.subscription_path).map_err(|e| format!("Failed to read subscription: {}", e))?;
-    let content = normalize_subscription_content(&raw, allow_lan)?;
+    let content = normalize_subscription_content(&raw, allow_lan, proxy_port, controller)?;
     fs::write(&paths.config_path, content).map_err(|e| format!("Failed to write Mihomo config: {}", e))?;
     Ok(format!("{{\"ok\":true,\"message\":\"{}\",\"configPath\":\"{}\"}}", escape_json("Subscription updated to core/config.yaml"), escape_json(&display(&paths.config_path))))
 }
@@ -203,15 +224,15 @@ fn set_allow_lan(paths: &AppPaths, allow_lan: bool) -> Result<String, String> {
     Ok(format!("{{\"ok\":true,\"message\":\"{}\",\"allowLan\":{}}}", escape_json(if allow_lan { "LAN access enabled" } else { "LAN access disabled" }), if allow_lan { "true" } else { "false" }))
 }
 
-fn normalize_subscription_content(raw: &str, allow_lan: bool) -> Result<String, String> {
+fn normalize_subscription_content(raw: &str, allow_lan: bool, proxy_port: u16, controller: &str) -> Result<String, String> {
     let trimmed = raw.trim_start_matches('\u{feff}').trim();
     if trimmed.is_empty() { return Err("Subscription content is empty".to_string()); }
     if trimmed.contains("proxies:") || trimmed.contains("proxy-providers:") || trimmed.contains("proxy-groups:") {
         let mut out = trimmed.to_string();
         out = remove_old_local_override_block(&out);
-        out = upsert_top_level_yaml_line(&out, "mixed-port", "7890");
+        out = upsert_top_level_yaml_line(&out, "mixed-port", &proxy_port.to_string());
         out = upsert_top_level_yaml_line(&out, "allow-lan", if allow_lan { "true" } else { "false" });
-        out = upsert_top_level_yaml_line(&out, "external-controller", "127.0.0.1:9090");
+        out = upsert_top_level_yaml_line(&out, "external-controller", controller);
         out = upsert_top_level_yaml_line(&out, "secret", "\"\"");
         return Ok(format!("{}\n", out.trim_end()));
     }
@@ -222,15 +243,10 @@ fn remove_old_local_override_block(input: &str) -> String {
     let mut result: Vec<String> = Vec::new();
     let mut skipping = false;
     for line in input.lines() {
-        if line.trim() == "# Clash Switchboard local overrides" {
-            skipping = true;
-            continue;
-        }
+        if line.trim() == "# Clash Switchboard local overrides" { skipping = true; continue; }
         if skipping {
             let key = top_level_key(line);
-            if matches!(key.as_deref(), Some("mixed-port") | Some("allow-lan") | Some("external-controller") | Some("secret")) {
-                continue;
-            }
+            if matches!(key.as_deref(), Some("mixed-port")|Some("allow-lan")|Some("external-controller")|Some("secret")) { continue; }
             skipping = false;
         }
         result.push(line.to_string());
@@ -243,17 +259,10 @@ fn upsert_top_level_yaml_line(input: &str, key: &str, value: &str) -> String {
     let mut lines: Vec<String> = Vec::new();
     for line in input.lines() {
         if top_level_key(line).as_deref() == Some(key) {
-            if !found {
-                lines.push(format!("{}: {}", key, value));
-                found = true;
-            }
-        } else {
-            lines.push(line.to_string());
-        }
+            if !found { lines.push(format!("{}: {}", key, value)); found = true; }
+        } else { lines.push(line.to_string()); }
     }
-    if !found {
-        lines.push(format!("{}: {}", key, value));
-    }
+    if !found { lines.push(format!("{}: {}", key, value)); }
     lines.join("\n")
 }
 
@@ -266,6 +275,15 @@ fn top_level_key(line: &str) -> Option<String> {
     if key.is_empty() { None } else { Some(key.to_string()) }
 }
 
+fn get_log(paths: &AppPaths) -> Result<String, String> {
+    let max_lines: usize = 200;
+    let content = fs::read_to_string(&paths.log_path).unwrap_or_default();
+    let lines: Vec<&str> = content.lines().collect();
+    let start = if lines.len() > max_lines { lines.len() - max_lines } else { 0 };
+    let recent: String = lines[start..].join("\n");
+    Ok(format!("{{\"ok\":true,\"log\":\"{}\",\"logPath\":\"{}\"}}", escape_json(&recent), escape_json(&display(&paths.log_path))))
+}
+
 fn get_subscription_info(url: Option<&str>) -> Result<String, String> {
     let url = url.map(str::trim).filter(|s| !s.is_empty()).ok_or_else(|| "Subscription URL is empty".to_string())?;
     if !(url.starts_with("http://") || url.starts_with("https://")) { return Err("Subscription URL must start with http:// or https://".to_string()); }
@@ -273,10 +291,7 @@ fn get_subscription_info(url: Option<&str>) -> Result<String, String> {
         "$ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 30 -Uri '{}'; $u=[string]$r.Headers['subscription-userinfo']; $w=[string]$r.Headers['profile-web-page-url']; [Console]::OutputEncoding=[Text.Encoding]::UTF8; Write-Output ('SUBINFO_JSON_START{{\"userinfo\":\"' + (($u -replace '\\\\','\\\\\\\\') -replace '\"','\\\"') + '\",\"webPageUrl\":\"' + (($w -replace '\\\\','\\\\\\\\') -replace '\"','\\\"') + '\"}}SUBINFO_JSON_END')",
         escape_powershell_single(url)
     );
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps])
-        .output()
-        .map_err(|e| format!("Failed to call PowerShell: {}", e))?;
+    let output = Command::new("powershell").args(["-NoProfile","-ExecutionPolicy","Bypass","-Command",&ps]).output().map_err(|e| format!("Failed to call PowerShell: {}", e))?;
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(format!("Failed to request subscription info: {}", if err.is_empty() { "PowerShell returned failure".to_string() } else { err }));
@@ -296,10 +311,7 @@ fn start(paths: &AppPaths) -> Result<String, String> {
     if current_status(paths)?.running { return status_json(paths, Some("Mihomo is already running")); }
     let stdout_log = OpenOptions::new().create(true).append(true).open(&paths.log_path).map_err(|e| format!("Failed to open log: {}", e))?;
     let stderr_log = stdout_log.try_clone().map_err(|e| format!("Failed to clone log handle: {}", e))?;
-    let child = Command::new(&paths.core_path)
-        .arg("-d").arg(&paths.config_dir).arg("-f").arg(&paths.config_path)
-        .current_dir(&paths.config_dir).stdin(Stdio::null()).stdout(Stdio::from(stdout_log)).stderr(Stdio::from(stderr_log))
-        .spawn().map_err(|e| format!("Failed to start Mihomo: {}", e))?;
+    let child = Command::new(&paths.core_path).arg("-d").arg(&paths.config_dir).arg("-f").arg(&paths.config_path).current_dir(&paths.config_dir).stdin(Stdio::null()).stdout(Stdio::from(stdout_log)).stderr(Stdio::from(stderr_log)).spawn().map_err(|e| format!("Failed to start Mihomo: {}", e))?;
     let pid = child.id();
     fs::write(&paths.pid_path, pid.to_string()).map_err(|e| format!("Failed to write PID file: {}", e))?;
     std::mem::forget(child);

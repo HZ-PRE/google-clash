@@ -15,13 +15,13 @@ if not errorlevel 1 (
   exit /b %ERRORLEVEL%
 )
 
-if exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" (
-  "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" "%ISS%"
+if exist "D:\app\Inno Setup 6\ISCC.exe" (
+  "D:\app\Inno Setup 6\ISCC.exe" "%ISS%"
   exit /b %ERRORLEVEL%
 )
 
-if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" (
-  "%ProgramFiles%\Inno Setup 6\ISCC.exe" "%ISS%"
+if exist "D:\app\Inno Setup 6\ISCC.exe" (
+  "D:\app\Inno Setup 6\ISCC.exe" "%ISS%"
   exit /b %ERRORLEVEL%
 )
 

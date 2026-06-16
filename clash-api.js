@@ -30,7 +30,9 @@ async function getSettings() {
     activeSubscriptionId: '',
     updateSubscriptionBeforeStart: true,
     allowLan: false,
-    nativeHostName: 'com.clash_switchboard.mihomo'
+    nativeHostName: 'com.clash_switchboard.mihomo',
+    profiles: [],
+    activeProfileId: ''
   };
   return chrome.storage.local.get(defaults);
 }
@@ -51,6 +53,14 @@ function clashHeaders(secret) {
 
 function formatClashError(status, text, statusText, path, base) {
   const detail = text || statusText;
+  if (status === 400) {
+    try {
+      const body = JSON.parse(text);
+      if (body.message === 'Body invalid') {
+        return `Clash API 400: Body invalid — 请求格式不正确 (${path})`;
+      }
+    } catch (_) {}
+  }
   if (status === 400 && path === '/version') {
     return [
       `Clash API 400: ${detail || 'Bad Request'}`,
@@ -102,12 +112,28 @@ async function getClashVersion() {
   return clashFetch('/version');
 }
 
+async function testProxyDelay(proxyName) {
+  const url = 'http://www.gstatic.com/generate_204';
+  const timeout = 5000;
+  return clashFetch(`/proxies/${encodeURIComponent(proxyName)}/delay?url=${encodeURIComponent(url)}&timeout=${timeout}`);
+}
+
+async function testProxyDelayWithUrl(proxyName, testUrl, timeout) {
+  testUrl = testUrl || 'http://www.gstatic.com/generate_204';
+  timeout = timeout || 5000;
+  return clashFetch(`/proxies/${encodeURIComponent(proxyName)}/delay?url=${encodeURIComponent(testUrl)}&timeout=${timeout}`);
+}
+
+async function getAllProxies() {
+  return clashFetch('/proxies');
+}
+
 async function getProxyGroups() {
   const data = await clashFetch('/proxies');
   const proxies = data?.proxies || {};
+  // Preserve config.yaml proxy-groups order (Mihomo returns them in definition order)
   return Object.values(proxies)
-    .filter((proxy) => Array.isArray(proxy.all) && proxy.all.length > 0)
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .filter((proxy) => Array.isArray(proxy.all) && proxy.all.length > 0);
 }
 
 async function selectClashNode(groupName, nodeName) {
@@ -119,4 +145,78 @@ async function selectClashNode(groupName, nodeName) {
 
 async function sendRuntimeMessage(message) {
   return chrome.runtime.sendMessage(message);
+}
+
+/* ── Profile helpers ── */
+
+function createProfileId() {
+  return `profile-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizeProfiles(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => ({
+      id: String(item?.id || createProfileId()).trim(),
+      name: String(item?.name || '').trim(),
+      mode: String(item?.mode || 'rule'),
+      proxyType: String(item?.proxyType || 'mixed'),
+      proxyHost: String(item?.proxyHost || '127.0.0.1'),
+      proxyPort: Number(item?.proxyPort || 7890),
+      bypassList: String(item?.bypassList || ''),
+      pacRules: Array.isArray(item?.pacRules) ? item.pacRules : [],
+      controllerUrl: String(item?.controllerUrl || 'http://127.0.0.1:9090'),
+      controllerSecret: String(item?.controllerSecret || ''),
+      activeGroup: String(item?.activeGroup || 'GLOBAL'),
+      allowLan: Boolean(item?.allowLan),
+      activeSubscriptionId: String(item?.activeSubscriptionId || '')
+    }))
+    .filter((item) => item.name);
+}
+
+function captureCurrentProfile(settings) {
+  return {
+    mode: settings.mode,
+    proxyType: settings.proxyType,
+    proxyHost: settings.proxyHost,
+    proxyPort: settings.proxyPort,
+    bypassList: settings.bypassList,
+    pacRules: settings.pacRules,
+    controllerUrl: settings.controllerUrl,
+    controllerSecret: settings.controllerSecret,
+    activeGroup: settings.activeGroup,
+    allowLan: settings.allowLan,
+    activeSubscriptionId: settings.activeSubscriptionId
+  };
+}
+
+async function saveAsProfile(name, settings) {
+  const profiles = normalizeProfiles(settings.profiles);
+  const id = createProfileId();
+  profiles.push({ id, name, ...captureCurrentProfile(settings) });
+  await setSettings({ profiles, activeProfileId: id });
+  return id;
+}
+
+async function loadProfile(profileId, settings) {
+  const profiles = normalizeProfiles(settings.profiles);
+  const profile = profiles.find((p) => p.id === profileId);
+  if (!profile) throw new Error('配置不存在');
+  const patch = { ...captureCurrentProfile(profile), activeProfileId: profileId };
+  await setSettings(patch);
+  return profile;
+}
+
+async function deleteProfile(profileId, settings) {
+  const profiles = normalizeProfiles(settings.profiles).filter((p) => p.id !== profileId);
+  const activeProfileId = settings.activeProfileId === profileId ? (profiles[0]?.id || '') : settings.activeProfileId;
+  await setSettings({ profiles, activeProfileId });
+}
+
+async function updateProfile(profileId, settings) {
+  const profiles = normalizeProfiles(settings.profiles);
+  const index = profiles.findIndex((p) => p.id === profileId);
+  if (index < 0) throw new Error('配置不存在');
+  profiles[index] = { ...profiles[index], ...captureCurrentProfile(settings) };
+  await setSettings({ profiles });
 }

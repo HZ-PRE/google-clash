@@ -29,7 +29,9 @@ const DEFAULT_SETTINGS = {
   activeSubscriptionId: '',
   updateSubscriptionBeforeStart: true,
   allowLan: false,
-  nativeHostName: 'com.clash_switchboard.mihomo'
+  nativeHostName: 'com.clash_switchboard.mihomo',
+  profiles: [],
+  activeProfileId: ''
 };
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -95,6 +97,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       if (message?.type === 'MIHOMO_SET_ALLOW_LAN') {
         const result = await setAllowLan(Boolean(message.allowLan), Boolean(message.restart));
+        sendResponse({ ok: true, ...result });
+        return;
+      }
+      if (message?.type === 'MIHOMO_GET_LOG') {
+        const result = await nativeMihomoMessage({ type: 'getLog' });
         sendResponse({ ok: true, ...result });
         return;
       }
@@ -304,11 +311,17 @@ function normalizeSubscriptions(subscriptions, legacyUrl = '') {
   return normalized;
 }
 
+function extractControllerAddress(url) {
+  const match = String(url || '').match(/^https?:\/\/(.+?)(?:\/.*)?$/i);
+  return match ? match[1] : '127.0.0.1:9090';
+}
+
 async function startVpn() {
   const settings = await chrome.storage.local.get(DEFAULT_SETTINGS);
   const subscriptionUrl = getActiveSubscriptionUrl(settings);
+  const controller = extractControllerAddress(settings.controllerUrl);
   if (settings.updateSubscriptionBeforeStart && subscriptionUrl) {
-    await nativeMihomoMessage({ type: 'updateSubscription', url: subscriptionUrl, allowLan: Boolean(settings.allowLan) });
+    await nativeMihomoMessage({ type: 'updateSubscription', url: subscriptionUrl, allowLan: Boolean(settings.allowLan), proxyPort: Number(settings.proxyPort || 7890), controller });
   }
   const result = await nativeMihomoMessage({ type: 'start' });
   await waitForControllerReady(12000);
@@ -323,7 +336,8 @@ async function updateSubscription(restartAfterUpdate = false) {
   const subscriptionUrl = getActiveSubscriptionUrl(settings);
   if (!subscriptionUrl) throw new Error('请先在高级设置里添加并启用一个订阅链接');
   const wasRunning = await nativeMihomoMessage({ type: 'status' }).catch(() => ({ running: false }));
-  const result = await nativeMihomoMessage({ type: 'updateSubscription', url: subscriptionUrl, allowLan: Boolean(settings.allowLan) });
+  const controller = extractControllerAddress(settings.controllerUrl);
+  const result = await nativeMihomoMessage({ type: 'updateSubscription', url: subscriptionUrl, allowLan: Boolean(settings.allowLan), proxyPort: Number(settings.proxyPort || 7890), controller });
   if (restartAfterUpdate && wasRunning?.running) {
     await nativeMihomoMessage({ type: 'restart' });
     await waitForControllerReady(12000);
