@@ -131,9 +131,27 @@ async function getAllProxies() {
 async function getProxyGroups() {
   const data = await clashFetch('/proxies');
   const proxies = data?.proxies || {};
-  // Preserve config.yaml proxy-groups order (Mihomo returns them in definition order)
-  return Object.values(proxies)
+
+  const groups = Object.values(proxies)
     .filter((proxy) => Array.isArray(proxy.all) && proxy.all.length > 0);
+
+  // Try to get config.yaml proxy-groups order via native host
+  try {
+    const res = await sendRuntimeMessage({ type: 'MIHOMO_GET_CONFIG' });
+    if (res?.ok && Array.isArray(res.proxyGroups) && res.proxyGroups.length) {
+      const orderMap = new Map(res.proxyGroups.map((name, i) => [name, i]));
+      groups.sort((a, b) => {
+        const ia = orderMap.get(a.name);
+        const ib = orderMap.get(b.name);
+        if (ia !== undefined && ib !== undefined) return ia - ib;
+        if (ia !== undefined) return -1;
+        if (ib !== undefined) return 1;
+        return 0;
+      });
+    }
+  } catch (_) {}
+
+  return groups;
 }
 
 async function selectClashNode(groupName, nodeName) {

@@ -57,6 +57,7 @@ fn run() -> Result<String, String> {
         "getSubscriptionInfo" => get_subscription_info(request.url.as_deref()),
         "setAllowLan" => set_allow_lan(&paths, parse_allow_lan(request.allow_lan.as_deref())),
         "getLog" => get_log(&paths),
+        "getConfig" => get_config(&paths),
         other => Ok(format!("{{\"ok\":false,\"error\":\"{}\"}}", escape_json(&format!("Unknown command: {}", other)))),
     }
 }
@@ -380,3 +381,179 @@ fn escape_json(input: &str) -> String {
 }
 
 fn display(path: &Path) -> String { path.to_string_lossy().to_string() }
+
+fn get_config(paths: &AppPaths) -> Result<String, String> {
+  let content = fs::read_to_string(&paths.config_path)
+    .map_err(|e| format!("Failed to read config.yaml: {}", e))?;
+  let groups = parse_yaml_proxy_groups(&content);
+  let json_groups: Vec<String> = groups.iter().map(|n| format!("\"{}\"", escape_json(n))).collect();
+  Ok(format!("{{\"ok\":true,\"proxyGroups\":[{}]}}", json_groups.join(",")))
+}
+
+fn parse_yaml_proxy_groups(yaml: &str) -> Vec<String> {
+  let mut names: Vec<String> = Vec::new();
+  let mut in_section = false;
+  for line in yaml.lines() {
+    let trimmed = line.trim();
+    if trimmed == "proxies:" || trimmed == "proxy-groups:" {
+      in_section = true;
+      continue;
+    }
+    if in_section {
+      if trimmed.is_empty() { continue; }
+      if !trimmed.starts_with('-') {
+        if !line.starts_with(' ') && !line.starts_with('\t') { break; }
+        continue;
+      }
+      // Handle inline YAML: - { name: GROUP_NAME, ... }
+      if let Some(brace_pos) = trimmed.find('{') {
+        let after_brace = &trimmed[brace_pos + 1..];
+        let mut name_val = None;
+        let mut type_val: Option<String> = None;
+        for part in after_brace.split(',') {
+          let kv = part.trim();
+          if kv.starts_with("name:") || kv.starts_with("name：") {
+            let v = kv[kv.find(':').unwrap() + 1..].trim();
+            let v = v.trim_matches('\'').trim_matches('"');
+            if !v.is_empty() { name_val = Some(v.to_string()); }
+          }
+          if kv.starts_with("type:") {
+            let v = kv[5..].trim();
+            type_val = Some(v.trim_matches('\'').trim_matches('"').to_string());
+          }
+        }
+        // Include all named entries (both proxy groups and proxy nodes)
+        // since config.yaml order interleaves them
+        if let Some(name) = name_val {
+          names.push(name);
+        }
+      }
+    }
+  }
+  names
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_parse_yaml_inline_format() {
+    let yaml = concat!(
+      "proxy-groups:\n",
+      "  - { name: 影猫机场, type: select, proxies: [自动选择, 故障转移] }\n",
+      "  - { name: 自动选择, type: urltest, proxies: [HK, JP] }\n",
+      "  - { name: 故障转移, type: fallback, proxies: [HK] }\n",
+      "  - { name: 境内使用, type: select, proxies: [DIRECT] }\n",
+      "  - { name: 海外使用, type: select, proxies: [自动选择] }\n",
+      "rules:\n",
+    );
+    let names = parse_yaml_proxy_groups(yaml);
+    assert_eq!(names.len(), 5);
+    assert_eq!(names, vec!["影猫机场", "自动选择", "故障转移", "境内使用", "海外使用"]);
+  }
+
+  #[test]
+  fn test_parse_yaml_proxies_section() {
+    let yaml = concat!(
+      "proxies:\n",
+      "  - { name: node-hk, type: ss, server: 1.2.3.4, port: 9901 }\n",
+      "  - { name: node-jp, type: ss, server: 5.6.7.8, port: 9902 }\n",
+      "rules:\n",
+    );
+    let names = parse_yaml_proxy_groups(yaml);
+    assert_eq!(names, vec!["node-hk", "node-jp"]);
+  }
+
+  #[test]
+  fn test_preserves_order() {
+    let mut yaml = String::from("proxy-groups:\n");
+    for i in 0..100 {
+      yaml.push_str(&format!("  - {{ name: group-{:03}, type: select, proxies: [A] }}\n", i));
+    }
+    let result = parse_yaml_proxy_groups(&yaml);
+    assert_eq!(result.len(), 100);
+    for i in 0..100 {
+      assert_eq!(result[i], format!("group-{:03}", i));
+    }
+  }
+
+  #[test]
+  fn test_empty() {
+    assert!(parse_yaml_proxy_groups("").is_empty());
+    assert!(parse_yaml_proxy_groups("mixed-port: 7890\n").is_empty());
+  }
+
+  #[test]
+  fn test_stops_at_next_section() {
+    let yaml = concat!(
+      "proxy-groups:\n",
+      "  - { name: G1, type: select, proxies: [A] }\n",
+      "  - { name: G2, type: select, proxies: [B] }\n",
+      "rules:\n",
+      "  - MATCH,DIRECT\n",
+    );
+    assert_eq!(parse_yaml_proxy_groups(yaml), vec!["G1", "G2"]);
+  }
+
+  #[test]
+  fn test_real_world_names() {
+    let yaml = concat!(
+      "proxies:\n",
+      "  - { name: 影猫机场, type: select, proxies: [A] }\n",
+      "  - { name: 联通-高速-香港-K3, type: ss, server: 1.2.3.4, port: 9901 }\n",
+      "  - { name: \"quoted-name\", type: select, proxies: [A] }\n",
+      "  - { name: 'single-quoted', type: select, proxies: [A] }\n",
+    );
+    let names = parse_yaml_proxy_groups(yaml);
+    assert_eq!(names.len(), 4);
+    assert_eq!(names, vec!["影猫机场", "联通-高速-香港-K3", "quoted-name", "single-quoted"]);
+  }
+
+  #[test]
+  fn test_get_config_e2e() {
+    let tmp = std::env::temp_dir().join("cst-test-config");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    std::fs::write(tmp.join("config.yaml"), concat!(
+      "mixed-port: 7890\n",
+      "proxy-groups:\n",
+      "  - { name: A, type: select, proxies: [X] }\n",
+      "  - { name: B, type: urltest, proxies: [X] }\n",
+    )).unwrap();
+
+    let paths = AppPaths {
+      config_dir: tmp.clone(),
+      config_path: tmp.join("config.yaml"),
+      core_path: tmp.join("x.exe"),
+      pid_path: tmp.join("x.pid"),
+      log_path: tmp.join("x.log"),
+      subscription_path: tmp.join("sub.yaml"),
+    };
+
+    let result = get_config(&paths).unwrap();
+    assert_eq!(result, r#"{"ok":true,"proxyGroups":["A","B"]}"#);
+    std::fs::remove_dir_all(&tmp).ok();
+  }
+
+  #[test]
+  fn test_parse_yaml_proxy_groups_matches_proxies_section() {
+    // Real-world case: config.yaml uses "proxies:" not "proxy-groups:"
+    let yaml = concat!(
+      "mixed-port: 7890\n",
+      "proxies:\n",
+      "  - { name: 联通-高速-香港-K3, type: ss, server: 1.2.3.4, port: 9901 }\n",
+      "  - { name: 印度-B, type: ss, server: 5.6.7.8, port: 10027 }\n",
+      "  - { name: 法国-A, type: ss, server: 9.10.11.12, port: 10022 }\n",
+      "  - name: GLOBAL\n",
+      "    type: select\n",
+      "    proxies:\n",
+      "      - DIRECT\n",
+      "      - 自动选择\n",
+      "rules:\n",
+    );
+    let names = parse_yaml_proxy_groups(yaml);
+    // The inline {} entries have names, multi-line - name: GLOBAL has no braces
+    assert_eq!(names, vec!["联通-高速-香港-K3", "印度-B", "法国-A"]);
+  }
+}

@@ -105,6 +105,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ ok: true, ...result });
         return;
       }
+      if (message?.type === 'MIHOMO_GET_CONFIG') {
+        const result = await nativeMihomoMessage({ type: 'getConfig' });
+        sendResponse({ ok: true, ...result });
+        return;
+      }
       sendResponse({ ok: false, error: 'Unknown message type' });
     } catch (error) {
       sendResponse({ ok: false, error: String(error?.message || error) });
@@ -158,10 +163,10 @@ function buildGlobalProxyConfig(settings) {
 }
 
 function buildPacProxyConfig(settings) {
-  const scheme = proxyScheme(settings.proxyType);
   const host = String(settings.proxyHost || '127.0.0.1');
   const port = Number(settings.proxyPort || 7890);
-  const proxy = `${scheme.toUpperCase()} ${host}:${port}`;
+  const pacKeyword = settings.proxyType === 'socks5' ? 'SOCKS5' : 'PROXY';
+  const proxy = `${pacKeyword} ${host}:${port}`;
   const rules = Array.isArray(settings.pacRules) ? settings.pacRules : DEFAULT_SETTINGS.pacRules;
   return {
     mode: 'pac_script',
