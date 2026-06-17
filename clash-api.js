@@ -85,26 +85,51 @@ function formatNetworkError(error, base, path) {
   ].join('\n');
 }
 
-async function clashFetch(path, options = {}) {
+async function clashFetch(path, options = {}, timeout = 10000) {
   const settings = await getSettings();
   const base = normalizeControllerUrl(settings.controllerUrl);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+
   let response;
+
   try {
     response = await fetch(`${base}${path}`, {
       ...options,
+      signal: controller.signal,
       headers: {
         ...clashHeaders(settings.controllerSecret),
         ...(options.headers || {})
       }
     });
   } catch (error) {
+    clearTimeout(timer);
+
+    if (error.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeout}ms: ${base}${path}`);
+    }
+
     throw new Error(formatNetworkError(error, base, path));
   }
+
+  clearTimeout(timer);
+
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new Error(formatClashError(response.status, text, response.statusText, path, base));
+    throw new Error(
+      formatClashError(
+        response.status,
+        text,
+        response.statusText,
+        path,
+        base
+      )
+    );
   }
+
   if (response.status === 204) return null;
+
   return response.json();
 }
 
@@ -126,6 +151,25 @@ async function testProxyDelayWithUrl(proxyName, testUrl, timeout) {
 
 async function getAllProxies() {
   return clashFetch('/proxies');
+}
+
+async function getConnections() {
+  return clashFetch('/connections');
+}
+
+async function getMemory(call) {
+  const settings = await getSettings();
+  const base = normalizeControllerUrl(settings.controllerUrl);
+  const ws = new WebSocket(`${base.replace('http', 'ws')}/memory`);
+  ws.onmessage = (event) => {
+    call(JSON.parse(event.data));
+  };
+}
+async function getMihomoLog() {
+  const settings = await getSettings();
+  const base = normalizeControllerUrl(settings.controllerUrl);
+  return new WebSocket(`${base.replace('http', 'ws')}/logs`);
+  
 }
 
 async function getProxyGroups() {

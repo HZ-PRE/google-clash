@@ -27,6 +27,26 @@
       </div>
     </section>
 
+    <section class="stats-card" id="statsCard">
+      <div class="stats-row">
+        <div class="stat-item stat-up">
+          <span class="stat-label">↑ 上行</span>
+          <span class="stat-value" id="statUpload">0 B/s</span>
+        </div>
+        <div class="stat-item stat-down">
+          <span class="stat-label">↓ 下行</span>
+          <span class="stat-value" id="statDownload">0 B/s</span>
+        </div>
+        <div class="stat-item stat-mem">
+          <span class="stat-label">内存</span>
+          <span class="stat-value" id="statMemory">--</span>
+        </div>
+      </div>
+      <div class="stats-total">
+        <small>累计 ↑ <span id="statTotalUp">0 B</span> · ↓ <span id="statTotalDown">0 B</span> · 活跃连接 <span id="statConns">0</span></small>
+      </div>
+    </section>
+
     <section class="vpn-card">
       <button id="vpnBtn" class="vpn-btn">启动 VPN</button>
       <button id="stopVpnBtn" class="secondary-btn stop-vpn-btn">停止 VPN</button>

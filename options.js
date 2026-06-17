@@ -23,6 +23,9 @@ let profiles = [];
 let activeProfileId = '';
 let ruleEditorMode = 'gui'; // 'gui' | 'text'
 let guiRules = []; // parsed rules for GUI editor
+let logAutoRefresh = false;
+let mihomoLogWs = null;
+let logRawText = ''; // last fetched log text
 
 init().catch((error) => setMessage('#saveMsg', error.message, true));
 
@@ -66,8 +69,9 @@ async function init() {
   $('#applyAllowLanBtn').addEventListener('click', applyAllowLan);
   $('#refreshActiveSubInfoBtn').addEventListener('click', refreshActiveSubscriptionInfo);
   $('#refreshAllSubInfoBtn').addEventListener('click', refreshAllSubscriptionInfo);
-  $('#refreshLogBtn').addEventListener('click', refreshLog);
-  $('#clearLogBtn')?.addEventListener('click', clearLogViewer);
+  $('#clearLogBtn').addEventListener('click', clearLogViewer);
+  $('#toggleAutoLogBtn').addEventListener('click', toggleAutoLog);
+  $('#logSearchInput').addEventListener('input', applyLogFilter);
 
   // Rule GUI editor events
   $('#addRuleBtn').addEventListener('click', addRuleFromGui);
@@ -750,20 +754,54 @@ function formatDateTime(timestamp) {
 
 async function refreshLog() {
   try {
-    setMessage('#logStatus', '正在读取日志...');
-    const res = await sendRuntimeMessage({ type: 'MIHOMO_GET_LOG' });
-    if (!res?.ok) throw new Error(res?.error || '读取日志失败');
-    $('#logViewer').value = res.log || '(空)';
-    setMessage('#logStatus', `日志路径：${res.logPath || '未知'}`);
-  } catch (error) {
-    setMessage('#logStatus', `读取日志失败：${error.message}`, true);
+    if (!logAutoRefresh) setMessage('#logStatus', '正在读取日志...');
+    mihomoLogWs = await getMihomoLog();
+    mihomoLogWs.onmessage = (event) => {
+     let log= JSON.parse(event.data);
+     if (log && typeof log === 'object') {
+        logRawText = `【${log.type}】时间：${formatDateTime(new Date().getTime())} -- ${log.payload}\n${logRawText}`;
+      }
+      applyLogFilter();
+  };
+  } catch (e) {
+    setMessage('#logStatus', `读取日志失败：${error}`, true);
+    logRawText = '';
     $('#logViewer').value = '';
   }
 }
 
-function clearLogViewer() {
+function applyLogFilter() {
+  const keyword = $('#logSearchInput').value.trim().toLowerCase();
+  if (!keyword) {
+    $('#logViewer').value = logRawText;
+    $('#logSearchCount').textContent = '';
+    return;
+  }
+  const lines = logRawText.split('\n');
+  const matched = lines.filter((line) => line.toLowerCase().includes(keyword));
+  $('#logViewer').value = matched.join('\n');
+  $('#logSearchCount').textContent = `${matched.length}/${lines.length} 行匹配`;
+}
+
+function toggleAutoLog() {
+  logAutoRefresh = !logAutoRefresh;
+  const btn = $('#toggleAutoLogBtn');
+  if (logAutoRefresh) {
+    btn.textContent = '停止刷新';
+    btn.classList.add('active');
+    refreshLog();
+  } else {
+    mihomoLogWs.close();
+    btn.textContent = '自动刷新';
+    btn.classList.remove('active');
+  }
+}
+
+async function clearLogViewer() {
   $('#logViewer').value = '';
-  setMessage('#logStatus', '');
+  $('#logSearchInput').value = '';
+  $('#logSearchCount').textContent = '';
+  logRawText = '';
 }
 
 async function testController() {

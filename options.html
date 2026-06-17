@@ -125,11 +125,16 @@
       <div class="section-head">
         <div>
           <h2>Mihomo 日志</h2>
-          <p class="subtitle small">查看 mihomo.log 的最近内容</p>
+          <p class="subtitle small">查看最近内容</p>
         </div>
-        <div>
-          <button id="refreshLogBtn" class="secondary-btn">查看日志</button>
+        <div class="log-toolbar">
+          <button id="toggleAutoLogBtn" class="ghost-btn">自动刷新</button>
+          <button id="clearLogBtn" class="ghost-btn">清空</button>
         </div>
+      </div>
+      <div class="log-search-bar">
+        <input id="logSearchInput" type="text" placeholder="搜索日志关键词..." />
+        <span id="logSearchCount" class="log-search-count"></span>
       </div>
       <p id="logStatus" class="hint"></p>
       <textarea id="logViewer" class="code-box log-box" rows="14" readonly spellcheck="false"></textarea>

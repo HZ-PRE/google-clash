@@ -100,11 +100,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ ok: true, ...result });
         return;
       }
-      if (message?.type === 'MIHOMO_GET_LOG') {
-        const result = await nativeMihomoMessage({ type: 'getLog' });
-        sendResponse({ ok: true, ...result });
-        return;
-      }
       if (message?.type === 'MIHOMO_GET_CONFIG') {
         const result = await nativeMihomoMessage({ type: 'getConfig' });
         sendResponse({ ok: true, ...result });

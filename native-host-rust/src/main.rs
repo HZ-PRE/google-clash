@@ -1,5 +1,5 @@
 use std::env;
-use std::fs::{self, OpenOptions};
+use std::fs::{self};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -18,7 +18,6 @@ struct HostStatus {
     pid: Option<u32>,
     core_path: String,
     config_path: String,
-    log_path: String,
     message: Option<String>,
 }
 
@@ -27,7 +26,6 @@ struct AppPaths {
     config_dir: PathBuf,
     config_path: PathBuf,
     pid_path: PathBuf,
-    log_path: PathBuf,
     subscription_path: PathBuf,
 }
 
@@ -56,7 +54,6 @@ fn run() -> Result<String, String> {
         ),
         "getSubscriptionInfo" => get_subscription_info(request.url.as_deref()),
         "setAllowLan" => set_allow_lan(&paths, parse_allow_lan(request.allow_lan.as_deref())),
-        "getLog" => get_log(&paths),
         "getConfig" => get_config(&paths),
         other => Ok(format!("{{\"ok\":false,\"error\":\"{}\"}}", escape_json(&format!("Unknown command: {}", other)))),
     }
@@ -71,7 +68,6 @@ fn resolve_paths() -> Result<AppPaths, String> {
         core_path: config_dir.join("nb-mihomo.exe"),
         config_path: config_dir.join("config.yaml"),
         pid_path: config_dir.join("mihomo.pid"),
-        log_path: config_dir.join("mihomo.log"),
         subscription_path: config_dir.join("subscription.yaml"),
         config_dir,
     })
@@ -185,10 +181,6 @@ fn default_config(allow_lan: bool, proxy_port: u16, controller: &str) -> String 
         "".to_string(),
         "proxies: []".to_string(),
         "proxy-groups:".to_string(),
-        "  - name: GLOBAL".to_string(),
-        "    type: select".to_string(),
-        "    proxies:".to_string(),
-        "      - DIRECT".to_string(),
         "rules:".to_string(),
         "  - MATCH,DIRECT".to_string(),
         "".to_string(),
@@ -276,15 +268,6 @@ fn top_level_key(line: &str) -> Option<String> {
     if key.is_empty() { None } else { Some(key.to_string()) }
 }
 
-fn get_log(paths: &AppPaths) -> Result<String, String> {
-    let max_lines: usize = 200;
-    let content = fs::read_to_string(&paths.log_path).unwrap_or_default();
-    let lines: Vec<&str> = content.lines().collect();
-    let start = if lines.len() > max_lines { lines.len() - max_lines } else { 0 };
-    let recent: String = lines[start..].join("\n");
-    Ok(format!("{{\"ok\":true,\"log\":\"{}\",\"logPath\":\"{}\"}}", escape_json(&recent), escape_json(&display(&paths.log_path))))
-}
-
 fn get_subscription_info(url: Option<&str>) -> Result<String, String> {
     let url = url.map(str::trim).filter(|s| !s.is_empty()).ok_or_else(|| "Subscription URL is empty".to_string())?;
     if !(url.starts_with("http://") || url.starts_with("https://")) { return Err("Subscription URL must start with http:// or https://".to_string()); }
@@ -306,17 +289,61 @@ fn get_subscription_info(url: Option<&str>) -> Result<String, String> {
 
 fn escape_powershell_single(input: &str) -> String { input.replace("'", "''") }
 
+use std::{
+    time::Duration,
+};
+
 fn start(paths: &AppPaths) -> Result<String, String> {
-    if !paths.core_path.exists() { return Err(format!("Mihomo core does not exist: {}", display(&paths.core_path))); }
+    // 1. core 检查
+    if !paths.core_path.exists() {
+        return Err(format!(
+            "Mihomo core does not exist: {}",
+            display(&paths.core_path)
+        ));
+    }
+
+    // 2. config 初始化
     ensure_default_config(paths)?;
-    if current_status(paths)?.running { return status_json(paths, Some("Mihomo is already running")); }
-    let stdout_log = OpenOptions::new().create(true).append(true).open(&paths.log_path).map_err(|e| format!("Failed to open log: {}", e))?;
-    let stderr_log = stdout_log.try_clone().map_err(|e| format!("Failed to clone log handle: {}", e))?;
-    let child = Command::new(&paths.core_path).arg("-d").arg(&paths.config_dir).arg("-f").arg(&paths.config_path).current_dir(&paths.config_dir).stdin(Stdio::null()).stdout(Stdio::from(stdout_log)).stderr(Stdio::from(stderr_log)).spawn().map_err(|e| format!("Failed to start Mihomo: {}", e))?;
+
+    // 3. 已运行检测（建议加 lock）
+    let status = current_status(paths)?;
+    if status.running {
+        return status_json(paths, Some("Mihomo is already running"));
+    }
+
+    // 4. 启动进程（增强配置）
+    let mut child = Command::new(&paths.core_path)
+        .arg("-d")
+        .arg(&paths.config_dir)
+        .arg("-f")
+        .arg(&paths.config_path)
+        .current_dir(&paths.config_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Failed to start Mihomo: {}", e))?;
+
     let pid = child.id();
-    fs::write(&paths.pid_path, pid.to_string()).map_err(|e| format!("Failed to write PID file: {}", e))?;
-    std::mem::forget(child);
-    status_json(paths, Some("Mihomo started"))
+
+    // 5. 写 PID（先写，避免丢失）
+    fs::write(&paths.pid_path, pid.to_string())
+        .map_err(|e| format!("Failed to write PID file: {}", e))?;
+
+    // 6. 不 forget，转交托管（关键优化点）
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+
+    // 7. 健康检查（避免假启动）
+    std::thread::sleep(Duration::from_millis(500));
+
+    if !is_process_alive(pid) {
+        let _ = fs::remove_file(&paths.pid_path);
+        return Err("Mihomo failed to start (process exited early)".to_string());
+    }
+
+    status_json(paths, Some("Mihomo started successfully"))
 }
 
 fn stop(paths: &AppPaths) -> Result<String, String> {
@@ -332,7 +359,12 @@ fn stop(paths: &AppPaths) -> Result<String, String> {
     let _ = remove_pid_file(paths);
     status_json(paths, Some("Mihomo stopped"))
 }
-
+fn is_process_alive(pid: u32) -> bool {
+    std::process::Command::new("tasklist")
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()))
+            .unwrap_or(false)
+}
 fn status_json(paths: &AppPaths, message: Option<&str>) -> Result<String, String> {
     let mut st = current_status(paths)?;
     st.message = message.map(|s| s.to_string());
@@ -343,7 +375,7 @@ fn current_status(paths: &AppPaths) -> Result<HostStatus, String> {
     let pid = read_pid(&paths.pid_path);
     let running = pid.map(is_pid_running).unwrap_or(false);
     if !running && paths.pid_path.exists() { let _ = remove_pid_file(paths); }
-    Ok(HostStatus { ok: true, running, pid: if running { pid } else { None }, core_path: display(&paths.core_path), config_path: display(&paths.config_path), log_path: display(&paths.log_path), message: None })
+    Ok(HostStatus { ok: true, running, pid: if running { pid } else { None }, core_path: display(&paths.core_path), config_path: display(&paths.config_path), message: None })
 }
 
 fn read_pid(pid_path: &Path) -> Option<u32> { fs::read_to_string(pid_path).ok()?.trim().parse::<u32>().ok() }
@@ -364,7 +396,7 @@ fn remove_pid_file(paths: &AppPaths) -> Result<(), String> {
 fn host_status_json(st: &HostStatus) -> String {
     let pid = st.pid.map(|p| p.to_string()).unwrap_or_else(|| "null".to_string());
     let message = st.message.as_ref().map(|m| format!(",\"message\":\"{}\"", escape_json(m))).unwrap_or_default();
-    format!("{{\"ok\":{},\"running\":{},\"pid\":{},\"corePath\":\"{}\",\"configPath\":\"{}\",\"logPath\":\"{}\"{}}}", if st.ok {"true"} else {"false"}, if st.running {"true"} else {"false"}, pid, escape_json(&st.core_path), escape_json(&st.config_path), escape_json(&st.log_path), message)
+    format!("{{\"ok\":{},\"running\":{},\"pid\":{},\"corePath\":\"{}\",\"configPath\":\"{}\"{}}}", if st.ok {"true"} else {"false"}, if st.running {"true"} else {"false"}, pid, escape_json(&st.core_path), escape_json(&st.config_path), message)
 }
 
 fn json_error(message: &str) -> String { format!("{{\"ok\":false,\"error\":\"{}\"}}", escape_json(message)) }
@@ -527,7 +559,6 @@ mod tests {
       config_path: tmp.join("config.yaml"),
       core_path: tmp.join("x.exe"),
       pid_path: tmp.join("x.pid"),
-      log_path: tmp.join("x.log"),
       subscription_path: tmp.join("sub.yaml"),
     };
 
