@@ -6,6 +6,7 @@ let groups = [];
 let allProxies = null;
 let statsTimer = null;
 let lastConnStats = null;
+let wsMemoryUsage =null;
 
 init().catch((error) => showControllerMessage(error.message, true));
 
@@ -13,11 +14,8 @@ async function init() {
   currentSettings = await getSettings();
   bindEvents();
   renderSettings(currentSettings);
-  startStatsPolling();
   syncMihomoStatus();
-  refreshGroups();
   updateStatus();
-  getWsMemoryUsage();
 }
 
 function bindEvents() {
@@ -38,8 +36,8 @@ function bindEvents() {
     });
   });
 
-  $('#vpnBtn').addEventListener('click', startVpn);
-  $('#stopVpnBtn').addEventListener('click', stopVpn);
+  $('#vpnBtn').addEventListener('click', toStartVpn);
+  $('#stopVpnBtn').addEventListener('click', toStopVpn);
   $('#updateSubPopupBtn').addEventListener('click', updateSubscriptionFromPopup);
   $('#allowLanBtn').addEventListener('click', toggleAllowLan);
   $('#optionsBtn').addEventListener('click', () => chrome.runtime.openOptionsPage());
@@ -413,12 +411,28 @@ async function stopVpn() {
     setVpnBusy(false);
   }
 }
-
+function startVpnStatus() {
+  startStatsPolling();
+  if(!wsMemoryUsage) getWsMemoryUsage();
+  refreshGroups();
+}
+function stopVpnStatus() {
+  stopStatsPolling();
+  if(wsMemoryUsage) {
+    wsMemoryUsage.close();
+    wsMemoryUsage = null;
+  }
+}
 async function syncMihomoStatus() {
   try {
     const res = await sendRuntimeMessage({ type: 'MIHOMO_STATUS' });
-    if (res?.running) showVpnMessage(`Mihomo 运行中 · PID ${res.pid || ''}`);
-    else showVpnMessage('Mihomo 未运行');
+    if (res?.running) {
+      showVpnMessage(`Mihomo 运行中 · PID ${res.pid || ''}`);
+      startVpnStatus();
+    }else{
+      showVpnMessage('Mihomo 未运行');
+      stopVpnStatus();
+    };
   } catch (error) {
     showVpnMessage('本地启动器未注册，需先运行 native-host\\install-native-host.bat', true);
   }
@@ -428,7 +442,14 @@ function setVpnBusy(busy) {
   $('#vpnBtn').disabled = busy;
   $('#stopVpnBtn').disabled = busy;
 }
-
+function toStopVpn(){
+  stopVpn();
+  stopVpnStatus();
+}
+function toStartVpn(){
+  startVpn();
+  startVpnStatus();
+}
 function showVpnMessage(message, error = false) {
   const el = $('#vpnMsg');
   el.textContent = message;
@@ -482,7 +503,7 @@ async function getWsMemoryUsage() {
   const el3 = $('#statMemory');
   if (!el3) return;
   try {
-    await getMemory((mem) => {
+    wsMemoryUsage =await getMemory((mem) => {
       if (mem) {
         const inuse = Number(mem.inuse || 0);
         const oslimit = Number(mem.oslimit || 0);

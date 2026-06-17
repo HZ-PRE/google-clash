@@ -140,6 +140,71 @@ select { background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' 
 .profile-select:focus { border-color: var(--green); }
 .profile-select option { background: var(--bg-elevated); color: var(--text); }
 
+/* ── Stats Card ── */
+.stats-card {
+  margin-top: 10px;
+  border-radius: var(--r-lg);
+  background: var(--bg-card);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border: 0.5px solid var(--separator-light);
+  padding: 12px 15px;
+}
+.stats-row {
+  display: flex;
+  gap: 0;
+}
+.stat-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 4px;
+  position: relative;
+}
+.stat-item + .stat-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 15%;
+  height: 70%;
+  width: 0.5px;
+  background: var(--separator-light);
+}
+.stat-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+}
+.stat-value {
+  font-size: 15px;
+  font-weight: 590;
+  font-feature-settings: "tnum";
+  font-variant-numeric: tabular-nums;
+}
+.stat-up .stat-value   { color: var(--green); }
+.stat-down .stat-value { color: var(--green); }
+.stat-mem .stat-value  { color: var(--text-secondary); }
+.stats-total {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--separator);
+  text-align: center;
+}
+.stats-total small {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  letter-spacing: -0.01em;
+}
+.stats-total span {
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-feature-settings: "tnum";
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Proxy Groups ── */
 .proxy-groups-section {   margin-top: 10px;   display: grid;   gap: 8px; }
 .proxy-groups-section #proxyGroupsList{
