@@ -390,7 +390,7 @@ async function waitForControllerReady(timeoutMs) {
     'Mihomo 已尝试启动，但 External Controller 未就绪。',
     `检测地址：${base}/version`,
     `最后错误：${lastError?.message || 'unknown'}`,
-    '请确认 core\\config.yaml 里包含 external-controller: 127.0.0.1:9090，并查看 core\\mihomo.log。'
+    '请确认 core\\config.yaml 里包含 external-controller: 127.0.0.1:9090。'
   ].join('\n'));
 }
 

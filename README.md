@@ -169,18 +169,6 @@ native-host\install-native-host.bat aggoidfhenhmcjdahailamnlingebmem
 
 ### 点击启动后 External Controller 未就绪
 
-查看日志：
-
-```text
-core/mihomo.log
-```
-
-安装包安装后的日志在：
-
-```text
-%LOCALAPPDATA%\ClashSwitchboard\core\mihomo.log
-```
-
 通常是 `core/config.yaml` 格式错误，或没有配置：
 
 ```yaml
