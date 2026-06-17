@@ -1,29 +1,28 @@
 @echo off
-setlocal
+setlocal EnableExtensions
+
 set "HOST_NAME=com.clash_switchboard.mihomo"
-set "HOST_DIR=%~dp0"
-set "HOST_EXE=%HOST_DIR%clash-switchboard-host.exe"
-set "HOST_MANIFEST=%HOST_DIR%%HOST_NAME%.json"
+set "EXT_ID=aggoidfhenhmcjdahailamnlingebmem"
+set "INST=%LOCALAPPDATA%\ClashSwitchboard"
+set "NH=%INST%\native-host"
+set "MANIFEST=%NH%\%HOST_NAME%.json"
+set "HOST_EXE=%NH%\clash-switchboard-host.exe"
 
-if "%~1"=="" (
-  echo 用法: install-native-host.bat ^<Chrome插件ID^>
-  echo 例如: install-native-host.bat aggoidfhenhmcjdahailamnlingebmem
-  exit /b 1
-)
+echo === Register Native Host ===
+echo.
 
-if not exist "%HOST_EXE%" (
-  echo 未找到 Native Host: %HOST_EXE%
-  echo 请先运行 build-rust-host.bat 编译 Rust 单文件 exe。
-  exit /b 1
-)
+mkdir "%NH%" 2>nul
+copy /Y "%~dp0clash-switchboard-host.exe" "%HOST_EXE%" >nul
 
-set "EXT_ID=%~1"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$path='%HOST_MANIFEST%'; $exe='%HOST_EXE%'; $id='%EXT_ID%'; $obj=[ordered]@{ name='%HOST_NAME%'; description='可牛块垒加速器'; path=$exe; type='stdio'; allowed_origins=@('chrome-extension://' + $id + '/') }; $json=$obj | ConvertTo-Json -Depth 5; [System.IO.File]::WriteAllText($path, $json, [System.Text.UTF8Encoding]::new($false))"
-if errorlevel 1 exit /b 1
+echo {"name":"%HOST_NAME%","description":"Mihomo launcher for Clash Switchboard","path":"%HOST_EXE:\=\\%","type":"stdio","allowed_origins":["chrome-extension://%EXT_ID%/"]} > "%MANIFEST%"
 
-reg add "HKCU\Software\Google\Chrome\NativeMessagingHosts\%HOST_NAME%" /ve /t REG_SZ /d "%HOST_MANIFEST%" /f
-if errorlevel 1 exit /b 1
+reg add "HKCU\Software\Google\Chrome\NativeMessagingHosts\%HOST_NAME%" /ve /t REG_SZ /d "%MANIFEST%" /f >nul
 
-echo Native Host 已注册: %HOST_MANIFEST%
-echo Native Host EXE: %HOST_EXE%
-echo 请重新加载 Chrome 插件。
+echo Manifest: %MANIFEST%
+echo.
+type "%MANIFEST%"
+echo.
+reg query "HKCU\Software\Google\Chrome\NativeMessagingHosts\%HOST_NAME%" /ve
+
+echo.
+echo Done. Please restart Chrome.

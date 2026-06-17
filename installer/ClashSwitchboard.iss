@@ -85,11 +85,9 @@ begin
     SaveStringToFile(NativeJsonPath, JsonText, False);
 
     Exec(
-      ExpandConstant('{cmd}'),
-      '/C "' +
-        ExpandConstant('{app}\native-host\install-native-host.bat') +
-        '" "{#ExtensionId}"',
+      ExpandConstant('{app}\native-host\install-native-host.bat'),
       '',
+      ExpandConstant('{app}\native-host'),
       SW_SHOW,
       ewWaitUntilTerminated,
       ResultCode
