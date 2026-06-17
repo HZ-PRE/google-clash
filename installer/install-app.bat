@@ -47,7 +47,7 @@ copy /Y "%SRC_ROOT%\native-host\uninstall-native-host.bat" "%NATIVE_HOST_DIR%\" 
 copy /Y "%SRC_ROOT%\core\nb-mihomo.exe" "%CORE_DIR%\" >nul
 if exist "%SRC_ROOT%\core\config.yaml" copy /Y "%SRC_ROOT%\core\config.yaml" "%CORE_DIR%\" >nul
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$path='%HOST_MANIFEST%'; $exe='%HOST_EXE%'; $id='%EXT_ID%'; $obj=[ordered]@{ name='%HOST_NAME%'; description='Mihomo launcher for Clash Switchboard'; path=$exe; type='stdio'; allowed_origins=@('chrome-extension://' + $id + '/') }; $json=$obj | ConvertTo-Json -Depth 5; [System.IO.File]::WriteAllText($path, $json, [System.Text.UTF8Encoding]::new($false))"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$path='%HOST_MANIFEST%'; $exe='%HOST_EXE%'; $id='%EXT_ID%'; $obj=[ordered]@{ name='%HOST_NAME%'; description='可牛块垒加速器'; path=$exe; type='stdio'; allowed_origins=@('chrome-extension://' + $id + '/') }; $json=$obj | ConvertTo-Json -Depth 5; [System.IO.File]::WriteAllText($path, $json, [System.Text.UTF8Encoding]::new($false))"
 if errorlevel 1 exit /b 1
 
 reg add "%NATIVE_KEY%" /ve /t REG_SZ /d "%HOST_MANIFEST%" /f >nul

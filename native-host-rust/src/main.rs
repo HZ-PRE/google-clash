@@ -236,7 +236,7 @@ fn remove_old_local_override_block(input: &str) -> String {
     let mut result: Vec<String> = Vec::new();
     let mut skipping = false;
     for line in input.lines() {
-        if line.trim() == "# Clash Switchboard local overrides" { skipping = true; continue; }
+        if line.trim() == "# 块垒加速器 local overrides" { skipping = true; continue; }
         if skipping {
             let key = top_level_key(line);
             if matches!(key.as_deref(), Some("mixed-port")|Some("allow-lan")|Some("external-controller")|Some("secret")) { continue; }

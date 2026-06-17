@@ -468,7 +468,7 @@ function updateStatus() {
   const settings = currentSettings;
   dot.classList.toggle('on', settings.enabled && settings.mode !== 'direct');
   title.textContent = settings.enabled && settings.mode !== 'direct' ? '浏览器代理已启用' : '浏览器直连';
-  text.textContent = 'Clash Switchboard';
+  text.textContent = '块垒加速器';
 }
 
 function showControllerMessage(message, error = false) {

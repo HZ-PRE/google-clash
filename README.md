@@ -1,4 +1,4 @@
-# Clash Switchboard Chrome Extension
+# 块垒加速器 Chrome Extension
 
 一个 Manifest V3 Chrome 插件，用于一键启动本地 Mihomo 内核，并让 Chrome 浏览器代理到 Mihomo。
 
