@@ -141,7 +141,17 @@ select { background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' 
 .profile-select option { background: var(--bg-elevated); color: var(--text); }
 
 /* ── Proxy Groups ── */
-.proxy-groups-section { margin-top: 10px; display: grid; gap: 8px; }
+.proxy-groups-section {   margin-top: 10px;   display: grid;   gap: 8px; }
+.proxy-groups-section #proxyGroupsList{
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  max-height: 360px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  gap: 8px;
+}
 .proxy-groups-toolbar { display: flex; gap: 6px; }
 .proxy-groups-toolbar .ghost-btn { font-size: 11px; padding: 5px 10px; }
 .group-empty { padding: 16px; border-radius: var(--r-lg); background: var(--bg-card); border: 0.5px solid var(--separator-light); color: var(--text-tertiary); text-align: center; }

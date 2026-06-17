@@ -86,9 +86,11 @@ begin
 
     Exec(
       ExpandConstant('{cmd}'),
-      '/C "' + ExpandConstant('{app}\native-host\install-native-host.bat') + '"',
+      '/C "' +
+        ExpandConstant('{app}\native-host\install-native-host.bat') +
+        '" "{#ExtensionId}"',
       '',
-      SW_HIDE,
+      SW_SHOW,
       ewWaitUntilTerminated,
       ResultCode
     );
