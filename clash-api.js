@@ -160,16 +160,26 @@ async function getConnections() {
 async function getMemory(call) {
   const settings = await getSettings();
   const base = normalizeControllerUrl(settings.controllerUrl);
-  const ws = new WebSocket(`${base.replace('http', 'ws')}/memory`);
+  const wsUrl = `${base.replace('http', 'ws')}/memory`;
+  let ws;
+  try {
+    ws = new WebSocket(wsUrl);
+  } catch (e) {
+    call(null);
+    return;
+  }
   ws.onmessage = (event) => {
-    call(JSON.parse(event.data));
+    try { call(JSON.parse(event.data)); } catch (_) {}
   };
+  ws.onerror = () => { call(null); };
+  return ws;
 }
-async function getMihomoLog() {
+
+async function getMihomoLog(level) {
   const settings = await getSettings();
   const base = normalizeControllerUrl(settings.controllerUrl);
-  return new WebSocket(`${base.replace('http', 'ws')}/logs`);
-  
+  const query = level ? `?level=${level}` : '';
+  return new WebSocket(`${base.replace('http', 'ws')}/logs${query}`);
 }
 
 async function getProxyGroups() {

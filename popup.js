@@ -478,21 +478,21 @@ function showControllerMessage(message, error = false) {
 }
 
 /* ── Bandwidth & Memory stats ── */
-function getWsMemoryUsage() {
-  let memory = 'N/A';
+async function getWsMemoryUsage() {
+  const el3 = $('#statMemory');
+  if (!el3) return;
   try {
-    getMemory((mem) => {
+    await getMemory((mem) => {
       if (mem) {
         const inuse = Number(mem.inuse || 0);
         const oslimit = Number(mem.oslimit || 0);
-        memory = oslimit ? `${formatBytes(inuse)} / ${formatBytes(oslimit)}` : formatBytes(inuse);
+        el3.textContent = oslimit ? `${formatBytes(inuse)} / ${formatBytes(oslimit)}` : formatBytes(inuse);
       } else {
-        memory = 'N/A';
+        el3.textContent = 'N/A';
       }
-      const el3 = $('#statMemory'); if (el3) el3.textContent = memory;
     });
   } catch (e) {
-    const el3 = $('#statMemory'); if (el3) el3.textContent = memory;
+    el3.textContent = 'N/A';
   }
 }
 function startStatsPolling() {
@@ -504,57 +504,57 @@ function stopStatsPolling() {
   if (statsTimer) { clearTimeout(statsTimer); statsTimer = null; }
 }
 async function pollStats() {
-  let conn = null;
-  let connError = null;
-
   try {
-    conn = await getConnections();
-  } catch (e) {
-    connError = e;
-  }
+    let conn = null;
+    let connError = null;
 
-  const ui = {};
-  if (connError) {
-    ui.upload = 'N/A';
-    ui.download = 'N/A';
-    ui.conns = '-';
-    const reason = String(connError?.message || connError).split('\n')[0];
-    ui.totalUp = reason.slice(0, 40);
-    ui.totalDown = '';
-    lastConnStats = null;
-  } else {
-    const now = Date.now();
-    const totalUp = Number(conn?.uploadTotal ?? conn?.totalUpload ?? 0);
-    const totalDown = Number(conn?.downloadTotal ?? conn?.totalDownload ?? 0);
-    const connCount = Array.isArray(conn?.connections) ? conn.connections.length : 0;
-
-    if (lastConnStats) {
-      const dt = Math.max((now - lastConnStats.time) / 1000, 0.1);
-      const upSpeed = Math.max(0, (totalUp - lastConnStats.totalUp) / dt);
-      const downSpeed = Math.max(0, (totalDown - lastConnStats.totalDown) / dt);
-      ui.upload = formatRate(upSpeed);
-      ui.download = formatRate(downSpeed);
-    } else {
-      ui.upload = '0 B/s';
-      ui.download = '0 B/s';
+    try {
+      conn = await getConnections();
+    } catch (e) {
+      connError = e;
     }
-    lastConnStats = { totalUp, totalDown, time: now };
 
-    ui.totalUp = formatBytes(totalUp);
-    ui.totalDown = formatBytes(totalDown);
-    ui.conns = String(connCount);
+    let upload, download, totalUp, totalDown, conns;
+
+    if (connError) {
+      upload = 'N/A';
+      download = 'N/A';
+      conns = '-';
+      const reason = String(connError?.message || connError).split('\n')[0];
+      totalUp = reason.slice(0, 30);
+      totalDown = '';
+      lastConnStats = null;
+    } else {
+      const now = Date.now();
+      const tUp = Number(conn?.uploadTotal ?? conn?.totalUpload ?? 0);
+      const tDown = Number(conn?.downloadTotal ?? conn?.totalDownload ?? 0);
+      const connCount = Array.isArray(conn?.connections) ? conn.connections.length : 0;
+
+      if (lastConnStats) {
+        const dt = Math.max((now - lastConnStats.time) / 1000, 0.1);
+        const upSpeed = Math.max(0, (tUp - lastConnStats.totalUp) / dt);
+        const downSpeed = Math.max(0, (tDown - lastConnStats.totalDown) / dt);
+        upload = formatRate(upSpeed);
+        download = formatRate(downSpeed);
+      } else {
+        upload = '0 B/s';
+        download = '0 B/s';
+      }
+      lastConnStats = { totalUp: tUp, totalDown: tDown, time: now };
+
+      totalUp = formatBytes(tUp);
+      totalDown = formatBytes(tDown);
+      conns = String(connCount);
+    }
+
+    const el = $('#statUpload'); if (el) el.textContent = upload;
+    const el2 = $('#statDownload'); if (el2) el2.textContent = download;
+    const el4 = $('#statTotalUp'); if (el4) el4.textContent = totalUp;
+    const el5 = $('#statTotalDown'); if (el5) el5.textContent = totalDown;
+    const el6 = $('#statConns'); if (el6) el6.textContent = conns;
+  } finally {
+    statsTimer = setTimeout(pollStats, 2000);
   }
-
-  requestAnimationFrame(() => {
-    const el = $('#statUpload'); if (el) el.textContent = ui.upload;
-    const el2 = $('#statDownload'); if (el2) el2.textContent = ui.download;
-    const el4 = $('#statTotalUp'); if (el4) el4.textContent = ui.totalUp;
-    const el5 = $('#statTotalDown'); if (el5) el5.textContent = ui.totalDown;
-    const el6 = $('#statConns'); if (el6) el6.textContent = ui.conns;
-    const card = $('#statsCard'); if (card) card.offsetHeight; // force reflow
-  });
-
-  statsTimer = setTimeout(pollStats, 2000);
 }
 
 function formatRate(bytesPerSec) {

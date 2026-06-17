@@ -128,6 +128,13 @@
           <p class="subtitle small">查看最近内容</p>
         </div>
         <div class="log-toolbar">
+          <select id="logLevelSelect" class="log-level-select">
+            <option value="debug">DEBUG</option>
+            <option value="info" selected>INFO</option>
+            <option value="warning">WARNING</option>
+            <option value="error">ERROR</option>
+            <option value="silent">SILENT</option>
+          </select>
           <button id="toggleAutoLogBtn" class="ghost-btn">自动刷新</button>
           <button id="clearLogBtn" class="ghost-btn">清空</button>
         </div>

@@ -483,7 +483,14 @@ footer { margin-top: 14px; }
 .stats-total small { color: var(--muted); font-size: 11px; }
 
 /* ── Log Toolbar ── */
-.log-toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+.log-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.log-level-select {
+  width: auto;
+  min-width: 100px;
+  padding: 7px 10px;
+  font-size: 12px;
+  border-radius: 12px;
+}
 .log-toolbar .ghost-btn.active {
   background: var(--accent);
   color: #04110c;

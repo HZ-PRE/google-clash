@@ -72,6 +72,7 @@ async function init() {
   $('#clearLogBtn').addEventListener('click', clearLogViewer);
   $('#toggleAutoLogBtn').addEventListener('click', toggleAutoLog);
   $('#logSearchInput').addEventListener('input', applyLogFilter);
+  $('#logLevelSelect').addEventListener('change', onLogLevelChange);
 
   // Rule GUI editor events
   $('#addRuleBtn').addEventListener('click', addRuleFromGui);
@@ -754,17 +755,25 @@ function formatDateTime(timestamp) {
 
 async function refreshLog() {
   try {
-    if (!logAutoRefresh) setMessage('#logStatus', '正在读取日志...');
-    mihomoLogWs = await getMihomoLog();
+    if (mihomoLogWs) { try { mihomoLogWs.close(); } catch (_) {} mihomoLogWs = null; }
+    if (!logAutoRefresh) setMessage('#logStatus', '正在连接日志流...');
+    const level = $('#logLevelSelect')?.value || 'info';
+    mihomoLogWs = await getMihomoLog(level);
     mihomoLogWs.onmessage = (event) => {
-     let log= JSON.parse(event.data);
-     if (log && typeof log === 'object') {
-        logRawText = `【${log.type}】时间：${formatDateTime(new Date().getTime())} -- ${log.payload}\n${logRawText}`;
-      }
+      try {
+        const log = JSON.parse(event.data);
+        if (log && typeof log === 'object') {
+          logRawText = `【${log.type}】${formatDateTime(new Date().getTime())} ${log.payload}\n${logRawText}`;
+        }
+      } catch (_) {}
       applyLogFilter();
-  };
+    };
+    mihomoLogWs.onerror = () => {
+      setMessage('#logStatus', '日志连接断开', true);
+    };
+    setMessage('#logStatus', `日志流已连接（等级：${level.toUpperCase()}）`);
   } catch (e) {
-    setMessage('#logStatus', `读取日志失败：${error}`, true);
+    setMessage('#logStatus', `读取日志失败：${e.message || e}`, true);
     logRawText = '';
     $('#logViewer').value = '';
   }
@@ -791,9 +800,16 @@ function toggleAutoLog() {
     btn.classList.add('active');
     refreshLog();
   } else {
-    mihomoLogWs.close();
+    if (mihomoLogWs) { try { mihomoLogWs.close(); } catch (_) {} mihomoLogWs = null; }
     btn.textContent = '自动刷新';
     btn.classList.remove('active');
+    setMessage('#logStatus', '已停止刷新');
+  }
+}
+
+function onLogLevelChange() {
+  if (mihomoLogWs) {
+    refreshLog();
   }
 }
 
