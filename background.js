@@ -116,7 +116,7 @@ function setBadgeBackgroundColorCompat(details) {
 
 chrome.runtime.onInstalled.addListener(async () => {
   const current = await storageGet(DEFAULT_SETTINGS);
-  await storageSet({ ...DEFAULT_SETTINGS, ...current });
+  await storageSet(Object.assign({}, DEFAULT_SETTINGS, current));
   await applyProxyFromStorage();
 });
 
@@ -152,37 +152,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       if (message && message.type === 'MIHOMO_START') {
         const result = await startVpn();
-        sendResponse({ ok: true, ...result });
+        sendResponse(Object.assign({ ok: true }, result));
         return;
       }
       if (message && message.type === 'MIHOMO_STOP') {
         const result = await stopVpn();
-        sendResponse({ ok: true, ...result });
+        sendResponse(Object.assign({ ok: true }, result));
         return;
       }
       if (message && message.type === 'MIHOMO_STATUS') {
         const result = await nativeMihomoMessage({ type: 'status' });
-        sendResponse({ ok: true, ...result });
+        sendResponse(Object.assign({ ok: true }, result));
         return;
       }
       if (message && message.type === 'MIHOMO_UPDATE_SUBSCRIPTION') {
         const result = await updateSubscription(Boolean(message.restart));
-        sendResponse({ ok: true, ...result });
+        sendResponse(Object.assign({ ok: true }, result));
         return;
       }
       if (message && message.type === 'MIHOMO_GET_SUBSCRIPTION_INFO') {
         const result = await nativeMihomoMessage({ type: 'getSubscriptionInfo', url: message.url });
-        sendResponse({ ok: true, ...result });
+        sendResponse(Object.assign({ ok: true }, result));
         return;
       }
       if (message && message.type === 'MIHOMO_SET_ALLOW_LAN') {
         const result = await setAllowLan(Boolean(message.allowLan), Boolean(message.restart));
-        sendResponse({ ok: true, ...result });
+        sendResponse(Object.assign({ ok: true }, result));
         return;
       }
       if (message && message.type === 'MIHOMO_GET_CONFIG') {
         const result = await nativeMihomoMessage({ type: 'getConfig' });
-        sendResponse({ ok: true, ...result });
+        sendResponse(Object.assign({ ok: true }, result));
         return;
       }
       sendResponse({ ok: false, error: 'Unknown message type' });
@@ -273,7 +273,8 @@ function generatePacScript(proxy, ruleLines) {
   const domains = parsed.filter((r) => r.type === 'DOMAIN');
   const keywords = parsed.filter((r) => r.type === 'DOMAIN-KEYWORD');
   const ipCidrs = parsed.filter((r) => r.type === 'IP-CIDR');
-  const match = [...parsed].reverse().find((r) => r.type === 'MATCH');
+  const reversed = parsed.slice().reverse();
+  const match = reversed.find((r) => r.type === 'MATCH');
 
   return `
 function FindProxyForURL(url, host) {
@@ -326,7 +327,9 @@ function parseRuleLine(line) {
   if (type === 'GEOIP') return null;
   if (type === 'DOMAIN-SUFFIX' || type === 'DOMAIN' || type === 'DOMAIN-KEYWORD') return { type, value: value.toLowerCase(), action };
   if (type === 'IP-CIDR') {
-    const [ip, bits] = value.split('/');
+    const cidrParts = value.split('/');
+    const ip = cidrParts[0];
+    const bits = cidrParts[1];
     return { type, ip, mask: cidrToMask(Number(bits)), action };
   }
   return null;
@@ -408,7 +411,7 @@ async function startVpn() {
   await storageSet({ enabled: true, mode: 'rule', proxyHost: '127.0.0.1', proxyPort: 7890, proxyType: 'mixed' });
   await applyProxyFromStorage();
   await updateBadge(true, 'rule');
-  return { ...result, message: result.message || 'VPN 已启动' };
+  return Object.assign({}, result, { message: result.message || 'VPN 已启动' });
 }
 
 async function updateSubscription(restartAfterUpdate = false) {
@@ -444,7 +447,7 @@ async function stopVpn() {
     await storageSet({ enabled: false, mode: 'direct' });
     await clearProxy();
   }
-  return { ...result, message: result.message || 'VPN 已停止' };
+  return Object.assign({}, result, { message: result.message || 'VPN 已停止' });
 }
 
 async function waitForControllerReady(timeoutMs) {

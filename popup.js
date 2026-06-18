@@ -5,8 +5,10 @@ let currentSettings = null;
 let groups = [];
 let allProxies = null;
 let statsTimer = null;
+let statsActive = false;
 let lastConnStats = null;
-let wsMemoryUsage =null;
+let wsMemoryUsage = null;
+let wsMemoryOpening = false;
 
 init().catch((error) => showControllerMessage(error.message, true));
 
@@ -387,8 +389,10 @@ async function startVpn() {
     renderSettings(currentSettings);
     updateStatus();
     showVpnMessage(`${res.message || 'VPN 已启动'}${res.pid ? ` · PID ${res.pid}` : ''}`);
+    startVpnStatus();
     await refreshGroups();
   } catch (error) {
+    stopVpnStatus();
     showVpnMessage(`启动失败：${error.message}`, true);
   } finally {
     setVpnBusy(false);
@@ -404,6 +408,7 @@ async function stopVpn() {
     currentSettings = await getSettings();
     renderSettings(currentSettings);
     updateStatus();
+    stopVpnStatus();
     showVpnMessage(res.message || 'VPN 已停止');
   } catch (error) {
     showVpnMessage(`停止失败：${error.message}`, true);
@@ -412,16 +417,20 @@ async function stopVpn() {
   }
 }
 function startVpnStatus() {
+  if (statsActive) return;
+  statsActive = true;
   startStatsPolling();
-  if(!wsMemoryUsage) getWsMemoryUsage();
-  refreshGroups();
+  if (!wsMemoryUsage && !wsMemoryOpening) getWsMemoryUsage();
 }
 function stopVpnStatus() {
+  statsActive = false;
   stopStatsPolling();
-  if(wsMemoryUsage) {
-    wsMemoryUsage.close();
+  lastConnStats = null;
+  if (wsMemoryUsage) {
+    try { wsMemoryUsage.close(); } catch (_) {}
     wsMemoryUsage = null;
   }
+  wsMemoryOpening = false;
 }
 async function syncMihomoStatus() {
   try {
@@ -429,6 +438,7 @@ async function syncMihomoStatus() {
     if (res && res.running) {
       showVpnMessage(`Mihomo 运行中 · PID ${res.pid || ''}`);
       startVpnStatus();
+      refreshGroups();
     }else{
       showVpnMessage('Mihomo 未运行');
       stopVpnStatus();
@@ -444,11 +454,9 @@ function setVpnBusy(busy) {
 }
 function toStopVpn(){
   stopVpn();
-  stopVpnStatus();
 }
 function toStartVpn(){
   startVpn();
-  startVpnStatus();
 }
 function showVpnMessage(message, error = false) {
   const el = $('#vpnMsg');
@@ -501,9 +509,11 @@ function showControllerMessage(message, error = false) {
 /* ── Bandwidth & Memory stats ── */
 async function getWsMemoryUsage() {
   const el3 = $('#statMemory');
-  if (!el3) return;
+  if (!el3 || wsMemoryOpening || wsMemoryUsage) return;
+  wsMemoryOpening = true;
   try {
-    wsMemoryUsage =await getMemory((mem) => {
+    const ws = await getMemory(function(mem) {
+      if (!statsActive) return;
       if (mem) {
         const inuse = Number(mem.inuse || 0);
         const oslimit = Number(mem.oslimit || 0);
@@ -512,12 +522,22 @@ async function getWsMemoryUsage() {
         el3.textContent = 'N/A';
       }
     });
+    wsMemoryUsage = ws || null;
+    if (wsMemoryUsage) {
+      wsMemoryUsage.onclose = function() {
+        wsMemoryUsage = null;
+        if (statsActive) setTimeout(getWsMemoryUsage, 3000);
+      };
+    }
   } catch (e) {
     el3.textContent = 'N/A';
+  } finally {
+    wsMemoryOpening = false;
   }
 }
 function startStatsPolling() {
   stopStatsPolling();
+  if (!statsActive) statsActive = true;
   pollStats();
 }
 
@@ -525,6 +545,7 @@ function stopStatsPolling() {
   if (statsTimer) { clearTimeout(statsTimer); statsTimer = null; }
 }
 async function pollStats() {
+  if (!statsActive) return;
   try {
     let conn = null;
     let connError = null;
@@ -574,7 +595,7 @@ async function pollStats() {
     const el5 = $('#statTotalDown'); if (el5) el5.textContent = totalDown;
     const el6 = $('#statConns'); if (el6) el6.textContent = conns;
   } finally {
-    statsTimer = setTimeout(pollStats, 2000);
+    if (statsActive) statsTimer = setTimeout(pollStats, 3000);
   }
 }
 

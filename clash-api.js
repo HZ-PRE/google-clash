@@ -41,12 +41,26 @@ function fetchWithTimeout(url, options, timeout) {
     const controller = new AbortController();
     const timer = setTimeout(function() { controller.abort(); }, timeout);
     const requestOptions = Object.assign({}, options, { signal: controller.signal });
-    return fetch(url, requestOptions).finally(function() { clearTimeout(timer); });
+    return fetch(url, requestOptions).then(function(response) {
+      clearTimeout(timer);
+      return response;
+    }, function(error) {
+      clearTimeout(timer);
+      throw error;
+    });
   }
+
+  let timer = null;
   return Promise.race([
-    fetch(url, options),
+    fetch(url, options).then(function(response) {
+      if (timer) clearTimeout(timer);
+      return response;
+    }, function(error) {
+      if (timer) clearTimeout(timer);
+      throw error;
+    }),
     new Promise(function(_, reject) {
-      setTimeout(function() { reject(new Error('Request timeout after ' + timeout + 'ms: ' + url)); }, timeout);
+      timer = setTimeout(function() { reject(new Error('Request timeout after ' + timeout + 'ms: ' + url)); }, timeout);
     })
   ]);
 }
@@ -306,7 +320,7 @@ function captureCurrentProfile(settings) {
 async function saveAsProfile(name, settings) {
   const profiles = normalizeProfiles(settings.profiles);
   const id = createProfileId();
-  profiles.push({ id, name, ...captureCurrentProfile(settings) });
+  profiles.push(Object.assign({ id: id, name: name }, captureCurrentProfile(settings))); 
   await setSettings({ profiles, activeProfileId: id });
   return id;
 }
@@ -315,7 +329,7 @@ async function loadProfile(profileId, settings) {
   const profiles = normalizeProfiles(settings.profiles);
   const profile = profiles.find((p) => p.id === profileId);
   if (!profile) throw new Error('配置不存在');
-  const patch = { ...captureCurrentProfile(profile), activeProfileId: profileId };
+  const patch = Object.assign({}, captureCurrentProfile(profile), { activeProfileId: profileId });
   await setSettings(patch);
   return profile;
 }
@@ -330,6 +344,6 @@ async function updateProfile(profileId, settings) {
   const profiles = normalizeProfiles(settings.profiles);
   const index = profiles.findIndex((p) => p.id === profileId);
   if (index < 0) throw new Error('配置不存在');
-  profiles[index] = { ...profiles[index], ...captureCurrentProfile(settings) };
+  profiles[index] = Object.assign({}, profiles[index], captureCurrentProfile(settings));
   await setSettings({ profiles });
 }

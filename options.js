@@ -25,7 +25,9 @@ let ruleEditorMode = 'gui'; // 'gui' | 'text'
 let guiRules = []; // parsed rules for GUI editor
 let logAutoRefresh = false;
 let mihomoLogWs = null;
-let logRawText = ''; // last fetched log text
+const MAX_LOG_LINES = 500;
+let logLines = [];
+let logRawText = ''; // cached visible log text
 
 init().catch((error) => setMessage('#saveMsg', error.message, true));
 
@@ -763,7 +765,9 @@ async function refreshLog() {
       try {
         const log = JSON.parse(event.data);
         if (log && typeof log === 'object') {
-          logRawText = `【${log.type}】${formatDateTime(new Date().getTime())} ${log.payload}\n${logRawText}`;
+          logLines.unshift(`【${log.type}】${formatDateTime(new Date().getTime())} ${log.payload}`);
+          if (logLines.length > MAX_LOG_LINES) logLines.length = MAX_LOG_LINES;
+          logRawText = logLines.join('\n');
         }
       } catch (_) {}
       applyLogFilter();
@@ -774,6 +778,7 @@ async function refreshLog() {
     setMessage('#logStatus', `日志流已连接（等级：${level.toUpperCase()}）`);
   } catch (e) {
     setMessage('#logStatus', `读取日志失败：${e.message || e}`, true);
+    logLines = [];
     logRawText = '';
     $('#logViewer').value = '';
   }
@@ -786,7 +791,7 @@ function applyLogFilter() {
     $('#logSearchCount').textContent = '';
     return;
   }
-  const lines = logRawText.split('\n');
+  const lines = logLines.length ? logLines : logRawText.split('\n').filter(Boolean);
   const matched = lines.filter((line) => line.toLowerCase().includes(keyword));
   $('#logViewer').value = matched.join('\n');
   $('#logSearchCount').textContent = `${matched.length}/${lines.length} 行匹配`;
@@ -817,6 +822,7 @@ async function clearLogViewer() {
   $('#logViewer').value = '';
   $('#logSearchInput').value = '';
   $('#logSearchCount').textContent = '';
+  logLines = [];
   logRawText = '';
 }
 
