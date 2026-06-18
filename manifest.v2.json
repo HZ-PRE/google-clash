@@ -1,0 +1,33 @@
+{
+  "manifest_version": 2,
+  "name": "块垒加速器",
+  "version": "1.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6Ih5mC+vKjLHptFQLLDdEMveuGpWBIWJxi6XFCMxiWDnbagKy0l/sG8vWoFshz/C70qUd2lqmJyjs3MMjFukrqb23sVKUOBw61Q44mhl38WMbiOJNe/w5L4OXW5pZYgyCFQnQ0rw0lqJX5GFOAPCsdreK1OA4de1JvLPCyMNxMATe1mievPMyTNWStp4NxIhmJLKIWM/CSLGxommkYyroqkZQZKtdIPrwfH+gU00d9A50QPPTSlj+7TidoWZ3o+LadOKpLxgNm5FMqZt6Dvnt3WWV1D3DUr0RDic3AHOo+o9o8ZBTGMnfn+7hoikJgPbTzlBo16Y/2OrdgLvWEGWIQIDAQAB",
+  "description": "Clash/Mihomo代理控制器。支持一键启动Mihomo、浏览器代理切换及Clash分组节点选择。",
+  "permissions": [
+    "proxy",
+    "storage",
+    "alarms",
+    "nativeMessaging",
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "http://[::1]/*",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": false
+  },
+  "browser_action": {
+    "default_title": "块垒加速器",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

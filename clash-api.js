@@ -1,3 +1,56 @@
+
+function chromeStorageGet(defaults) {
+  return new Promise(function(resolve, reject) {
+    chrome.storage.local.get(defaults, function(result) {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(result || {});
+    });
+  });
+}
+
+function chromeStorageSet(value) {
+  return new Promise(function(resolve, reject) {
+    chrome.storage.local.set(value, function() {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function chromeRuntimeSendMessage(message) {
+  return new Promise(function(resolve, reject) {
+    chrome.runtime.sendMessage(message, function(response) {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
+
+function fetchWithTimeout(url, options, timeout) {
+  options = options || {};
+  if (typeof AbortController !== 'undefined') {
+    const controller = new AbortController();
+    const timer = setTimeout(function() { controller.abort(); }, timeout);
+    const requestOptions = Object.assign({}, options, { signal: controller.signal });
+    return fetch(url, requestOptions).finally(function() { clearTimeout(timer); });
+  }
+  return Promise.race([
+    fetch(url, options),
+    new Promise(function(_, reject) {
+      setTimeout(function() { reject(new Error('Request timeout after ' + timeout + 'ms: ' + url)); }, timeout);
+    })
+  ]);
+}
+
 async function getSettings() {
   const defaults = {
     enabled: false,
@@ -34,11 +87,11 @@ async function getSettings() {
     profiles: [],
     activeProfileId: ''
   };
-  return chrome.storage.local.get(defaults);
+  return chromeStorageGet(defaults);
 }
 
 async function setSettings(patch) {
-  await chrome.storage.local.set(patch);
+  await chromeStorageSet(patch);
 }
 
 function normalizeControllerUrl(url) {
@@ -74,7 +127,7 @@ function formatClashError(status, text, statusText, path, base) {
 
 function formatNetworkError(error, base, path) {
   return [
-    `无法连接 Clash External Controller：${error?.message || 'Failed to fetch'}`,
+    `无法连接 Clash External Controller：${(error && error.message) || 'Failed to fetch'}`,
     `请求地址：${base || '(空)'}${path}`,
     '请检查：',
     '1. Clash / Mihomo 内核是否正在运行；',
@@ -89,31 +142,19 @@ async function clashFetch(path, options = {}, timeout = 10000) {
   const settings = await getSettings();
   const base = normalizeControllerUrl(settings.controllerUrl);
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
-
   let response;
 
   try {
-    response = await fetch(`${base}${path}`, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        ...clashHeaders(settings.controllerSecret),
-        ...(options.headers || {})
-      }
-    });
+    response = await fetchWithTimeout(`${base}${path}`, Object.assign({}, options, {
+      headers: Object.assign({}, clashHeaders(settings.controllerSecret), options.headers || {})
+    }), timeout);
   } catch (error) {
-    clearTimeout(timer);
-
     if (error.name === 'AbortError') {
       throw new Error(`Request timeout after ${timeout}ms: ${base}${path}`);
     }
 
     throw new Error(formatNetworkError(error, base, path));
   }
-
-  clearTimeout(timer);
 
   if (!response.ok) {
     const text = await response.text().catch(() => '');
@@ -184,7 +225,7 @@ async function getMihomoLog(level) {
 
 async function getProxyGroups() {
   const data = await clashFetch('/proxies');
-  const proxies = data?.proxies || {};
+  const proxies = (data && data.proxies) || {};
 
   const groups = Object.values(proxies)
     .filter((proxy) => Array.isArray(proxy.all) && proxy.all.length > 0);
@@ -192,7 +233,7 @@ async function getProxyGroups() {
   // Try to get config.yaml proxy-groups order via native host
   try {
     const res = await sendRuntimeMessage({ type: 'MIHOMO_GET_CONFIG' });
-    if (res?.ok && Array.isArray(res.proxyGroups) && res.proxyGroups.length) {
+    if (res && res.ok && Array.isArray(res.proxyGroups) && res.proxyGroups.length) {
       const orderMap = new Map(res.proxyGroups.map((name, i) => [name, i]));
       groups.sort((a, b) => {
         const ia = orderMap.get(a.name);
@@ -216,7 +257,7 @@ async function selectClashNode(groupName, nodeName) {
 }
 
 async function sendRuntimeMessage(message) {
-  return chrome.runtime.sendMessage(message);
+  return chromeRuntimeSendMessage(message);
 }
 
 /* ── Profile helpers ── */
@@ -229,19 +270,19 @@ function normalizeProfiles(value) {
   if (!Array.isArray(value)) return [];
   return value
     .map((item) => ({
-      id: String(item?.id || createProfileId()).trim(),
-      name: String(item?.name || '').trim(),
-      mode: String(item?.mode || 'rule'),
-      proxyType: String(item?.proxyType || 'mixed'),
-      proxyHost: String(item?.proxyHost || '127.0.0.1'),
-      proxyPort: Number(item?.proxyPort || 7890),
-      bypassList: String(item?.bypassList || ''),
-      pacRules: Array.isArray(item?.pacRules) ? item.pacRules : [],
-      controllerUrl: String(item?.controllerUrl || 'http://127.0.0.1:9090'),
-      controllerSecret: String(item?.controllerSecret || ''),
-      activeGroup: String(item?.activeGroup || 'GLOBAL'),
-      allowLan: Boolean(item?.allowLan),
-      activeSubscriptionId: String(item?.activeSubscriptionId || '')
+      id: String((item && item.id) || createProfileId()).trim(),
+      name: String((item && item.name) || '').trim(),
+      mode: String((item && item.mode) || 'rule'),
+      proxyType: String((item && item.proxyType) || 'mixed'),
+      proxyHost: String((item && item.proxyHost) || '127.0.0.1'),
+      proxyPort: Number((item && item.proxyPort) || 7890),
+      bypassList: String((item && item.bypassList) || ''),
+      pacRules: Array.isArray((item && item.pacRules)) ? item.pacRules : [],
+      controllerUrl: String((item && item.controllerUrl) || 'http://127.0.0.1:9090'),
+      controllerSecret: String((item && item.controllerSecret) || ''),
+      activeGroup: String((item && item.activeGroup) || 'GLOBAL'),
+      allowLan: Boolean((item && item.allowLan)),
+      activeSubscriptionId: String((item && item.activeSubscriptionId) || '')
     }))
     .filter((item) => item.name);
 }
@@ -281,7 +322,7 @@ async function loadProfile(profileId, settings) {
 
 async function deleteProfile(profileId, settings) {
   const profiles = normalizeProfiles(settings.profiles).filter((p) => p.id !== profileId);
-  const activeProfileId = settings.activeProfileId === profileId ? (profiles[0]?.id || '') : settings.activeProfileId;
+  const activeProfileId = settings.activeProfileId === profileId ? ((profiles[0] && profiles[0].id) || '') : settings.activeProfileId;
   await setSettings({ profiles, activeProfileId });
 }
 

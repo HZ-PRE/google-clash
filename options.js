@@ -32,7 +32,7 @@ init().catch((error) => setMessage('#saveMsg', error.message, true));
 async function init() {
   const settings = await getSettings();
   subscriptions = normalizeSubscriptions(settings.subscriptions, settings.subscriptionUrl);
-  activeSubscriptionId = settings.activeSubscriptionId || subscriptions[0]?.id || '';
+  activeSubscriptionId = settings.activeSubscriptionId || (subscriptions[0] && subscriptions[0].id) || '';
   profiles = normalizeProfiles(settings.profiles);
   activeProfileId = settings.activeProfileId || '';
 
@@ -54,7 +54,7 @@ async function init() {
   $('#applyBtn').addEventListener('click', async () => {
     await saveOptions();
     const res = await sendRuntimeMessage({ type: 'APPLY_PROXY' });
-    if (!res?.ok) throw new Error(res?.error || '应用失败');
+    if (!res || !res.ok) throw new Error((res && res.error) || '应用失败');
     setMessage('#saveMsg', '已保存并应用');
   });
   $('#resetRulesBtn').addEventListener('click', () => {
@@ -94,7 +94,7 @@ function parseRules(ruleLines) {
       const clean = String(line || '').trim();
       if (!clean || clean.startsWith('#')) return null;
       const parts = clean.split(',').map((p) => p.trim());
-      const type = parts[0]?.toUpperCase() || '';
+      const type = (parts[0] ? parts[0].toUpperCase() : undefined) || '';
       if (type === 'MATCH') return { type: 'MATCH', value: '', action: (parts[1] || 'DIRECT').toUpperCase(), index };
       if (type === 'GEOIP') return { type: 'GEOIP', value: parts[1] || '', action: (parts[2] || 'DIRECT').toUpperCase(), index, ignored: true };
       const value = parts[1] || '';
@@ -295,7 +295,7 @@ function renderProfiles() {
 
     const meta = document.createElement('small');
     const parts = [p.mode, `${p.proxyHost}:${p.proxyPort}`, p.proxyType];
-    if (p.pacRules?.length) parts.push(`${p.pacRules.length} 条规则`);
+    if ((p.pacRules && p.pacRules.length)) parts.push(`${p.pacRules.length} 条规则`);
     meta.textContent = parts.join(' · ');
 
     info.appendChild(name);
@@ -342,7 +342,7 @@ async function saveCurrentProfile() {
   settings.pacRules = getCurrentPacRules();
   settings.mode = 'rule';
   settings.activeGroup = 'GLOBAL';
-  settings.activeSubscriptionId = getActiveSubscription()?.id || '';
+  settings.activeSubscriptionId = (getActiveSubscription() && getActiveSubscription().id) || '';
 
   const id = await saveAsProfile(name, settings);
   profiles = normalizeProfiles((await getSettings()).profiles);
@@ -378,7 +378,7 @@ async function loadProfileById(id) {
     }
 
     renderProfiles();
-    setMessage('#profileMsg', `已加载配置「${profiles.find(p => p.id === id)?.name || id}」`);
+    setMessage('#profileMsg', `已加载配置「${(profiles.find(function(p) { return p.id === id; }) || {}).name || id}」`);
   } catch (error) {
     setMessage('#profileMsg', `加载失败：${error.message}`, true);
   }
@@ -397,7 +397,7 @@ async function updateProfileById(id) {
     settings.pacRules = getCurrentPacRules();
     settings.mode = 'rule';
     settings.activeGroup = 'GLOBAL';
-    settings.activeSubscriptionId = getActiveSubscription()?.id || '';
+    settings.activeSubscriptionId = (getActiveSubscription() && getActiveSubscription().id) || '';
 
     await updateProfile(id, settings);
     profiles = normalizeProfiles((await getSettings()).profiles);
@@ -432,11 +432,11 @@ function normalizeSubscriptions(value, legacyUrl = '') {
   const list = Array.isArray(value) ? value : [];
   const normalized = list
     .map((item) => ({
-      id: String(item?.id || createSubscriptionId()).trim(),
-      name: String(item?.name || '').trim(),
-      url: String(item?.url || '').trim(),
-      remark: String(item?.remark || '').trim(),
-      trafficInfo: normalizeTrafficInfo(item?.trafficInfo)
+      id: String((item && item.id) || createSubscriptionId()).trim(),
+      name: String((item && item.name) || '').trim(),
+      url: String((item && item.url) || '').trim(),
+      remark: String((item && item.remark) || '').trim(),
+      trafficInfo: normalizeTrafficInfo((item && item.trafficInfo))
     }))
     .filter((item) => item.url);
 
@@ -566,7 +566,7 @@ async function addSubscription() {
   if (!/^https?:\/\//i.test(url)) return setMessage('#subMsg', '订阅链接必须以 http:// 或 https:// 开头', true);
 
   const old = subscriptions.find((sub) => sub.id === id);
-  const item = { id, name: name || `订阅 ${subscriptions.length + 1}`, url, remark, trafficInfo: old?.trafficInfo || null };
+  const item = { id, name: name || `订阅 ${subscriptions.length + 1}`, url, remark, trafficInfo: (old && old.trafficInfo) || null };
   const index = subscriptions.findIndex((sub) => sub.id === id);
   if (index >= 0) subscriptions[index] = item;
   else subscriptions.push(item);
@@ -581,7 +581,7 @@ async function addSubscription() {
 
 function deleteSubscription(id) {
   subscriptions = subscriptions.filter((item) => item.id !== id);
-  if (activeSubscriptionId === id) activeSubscriptionId = subscriptions[0]?.id || '';
+  if (activeSubscriptionId === id) activeSubscriptionId = (subscriptions[0] && subscriptions[0].id) || '';
   renderSubscriptions();
   setMessage('#subMsg', '订阅已删除，请点击保存设置');
 }
@@ -608,8 +608,8 @@ async function saveOptions() {
     controllerUrl: $('#controllerUrl').value.trim() || 'http://127.0.0.1:9090',
     controllerSecret: $('#controllerSecret').value,
     subscriptions,
-    activeSubscriptionId: active?.id || '',
-    subscriptionUrl: active?.url || '',
+    activeSubscriptionId: (active && active.id) || '',
+    subscriptionUrl: (active && active.url) || '',
     updateSubscriptionBeforeStart: $('#updateSubscriptionBeforeStart').checked,
     allowLan: $('#allowLan').checked,
     pacRules,
@@ -625,7 +625,7 @@ async function applyAllowLan() {
     const allowLan = $('#allowLan').checked;
     setMessage('#subMsg', allowLan ? '正在开启局域网访问...' : '正在关闭局域网访问...');
     const res = await sendRuntimeMessage({ type: 'MIHOMO_SET_ALLOW_LAN', allowLan, restart: true });
-    if (!res?.ok) throw new Error(res?.error || '应用局域网开关失败');
+    if (!res || !res.ok) throw new Error((res && res.error) || '应用局域网开关失败');
     setMessage('#subMsg', allowLan ? '已开启局域网访问，配置已更新' : '已关闭局域网访问，配置已更新');
   } catch (error) {
     setMessage('#subMsg', `应用失败：${error.message}`, true);
@@ -639,7 +639,7 @@ async function updateSubscription(restart) {
     if (!active) throw new Error('请先添加一个订阅链接');
     setMessage('#subMsg', `${restart ? '正在更新并重启' : '正在更新'}：${active.name || active.url}`);
     const res = await sendRuntimeMessage({ type: 'MIHOMO_UPDATE_SUBSCRIPTION', restart });
-    if (!res?.ok) throw new Error(res?.error || '更新订阅失败');
+    if (!res || !res.ok) throw new Error((res && res.error) || '更新订阅失败');
     await refreshSubscriptionInfo(active.id, { silentError: true });
     setMessage('#subMsg', res.message || '订阅已更新');
   } catch (error) {
@@ -687,9 +687,9 @@ async function refreshSubscriptionInfo(id, options = {}) {
 
 async function fetchSubscriptionInfo(url) {
   const res = await sendRuntimeMessage({ type: 'MIHOMO_GET_SUBSCRIPTION_INFO', url });
-  if (!res?.ok) throw new Error(res?.error || '请求订阅信息失败');
-  const raw = res.data?.userinfo || '';
-  const webPageUrl = res.data?.webPageUrl || '';
+  if (!res || !res.ok) throw new Error((res && res.error) || '请求订阅信息失败');
+  const raw = (res.data && res.data.userinfo) || '';
+  const webPageUrl = (res.data && res.data.webPageUrl) || '';
   if (!raw) {
     throw new Error('订阅响应头没有 subscription-userinfo，无法识别剩余流量/到期时间');
   }
@@ -757,7 +757,7 @@ async function refreshLog() {
   try {
     if (mihomoLogWs) { try { mihomoLogWs.close(); } catch (_) {} mihomoLogWs = null; }
     if (!logAutoRefresh) setMessage('#logStatus', '正在连接日志流...');
-    const level = $('#logLevelSelect')?.value || 'info';
+    const level = ($('#logLevelSelect') && $('#logLevelSelect').value) || 'info';
     mihomoLogWs = await getMihomoLog(level);
     mihomoLogWs.onmessage = (event) => {
       try {
@@ -824,7 +824,7 @@ async function testController() {
   try {
     await saveOptions();
     const version = await getClashVersion();
-    setMessage('#testMsg', `连接成功：${version?.premium ? 'Premium' : 'Core'} ${version?.version || ''}`);
+    setMessage('#testMsg', `连接成功：${(version && version.premium) ? 'Premium' : 'Core'} ${(version && version.version) || ''}`);
   } catch (error) {
     setMessage('#testMsg', `连接失败：${error.message}`, true);
   }

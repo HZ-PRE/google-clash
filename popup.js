@@ -84,7 +84,7 @@ async function onProfileChange(e) {
     currentSettings = await getSettings();
     renderSettings(currentSettings);
     await sendRuntimeMessage({ type: 'APPLY_PROXY' });
-    showControllerMessage(`已切换到配置：${currentSettings.activeProfileId ? (normalizeProfiles(currentSettings.profiles).find(p => p.id === currentSettings.activeProfileId)?.name || '') : ''}`);
+    showControllerMessage(`已切换到配置：${currentSettings.activeProfileId ? ((normalizeProfiles(currentSettings.profiles).find(function(p) { return p.id === currentSettings.activeProfileId; }) || {}).name || '') : ''}`);
     await refreshGroups();
   } catch (error) {
     showControllerMessage(`切换配置失败：${error.message}`, true);
@@ -179,7 +179,7 @@ function updateGroupCurrentText(group, el) {
 }
 
 function getNodeDelay(groupName, nodeName) {
-  if (!allProxies?.proxies) return null;
+  if (!allProxies || !allProxies.proxies) return null;
   const proxy = allProxies.proxies[nodeName];
   if (!proxy || !proxy.history || !proxy.history.length) return null;
   return proxy.history[proxy.history.length - 1].delay;
@@ -279,7 +279,7 @@ async function speedTestAllGroups() {
 
 async function autoSelectBestNode(groupName) {
   const group = groups.find((g) => g.name === groupName);
-  if (!group || !group.all?.length) {
+  if (!group || !group.all || !group.all.length) {
     showControllerMessage(`${groupName} 无可用节点`, true);
     return;
   }
@@ -292,7 +292,7 @@ async function autoSelectBestNode(groupName) {
   }
 
   allProxies = await getAllProxies();
-  const proxyData = allProxies?.proxies || {};
+  const proxyData = (allProxies && allProxies.proxies) || {};
 
   let bestNode = null;
   let bestDelay = Infinity;
@@ -333,7 +333,7 @@ async function autoSelectAllGroups() {
     } catch (_) {}
 
     allProxies = await getAllProxies();
-    const proxyData = allProxies?.proxies || {};
+    const proxyData = (allProxies && allProxies.proxies) || {};
 
     let bestNode = null;
     let bestDelay = Infinity;
@@ -382,7 +382,7 @@ async function startVpn() {
   showVpnMessage('正在启动 Mihomo 并应用浏览器代理...');
   try {
     const res = await sendRuntimeMessage({ type: 'MIHOMO_START' });
-    if (!res?.ok) throw new Error(res?.error || '启动失败');
+    if (!res || !res.ok) throw new Error((res && res.error) || '启动失败');
     currentSettings = await getSettings();
     renderSettings(currentSettings);
     updateStatus();
@@ -400,7 +400,7 @@ async function stopVpn() {
   showVpnMessage('正在停止 Mihomo 并清除浏览器代理...');
   try {
     const res = await sendRuntimeMessage({ type: 'MIHOMO_STOP' });
-    if (!res?.ok) throw new Error(res?.error || '停止失败');
+    if (!res || !res.ok) throw new Error((res && res.error) || '停止失败');
     currentSettings = await getSettings();
     renderSettings(currentSettings);
     updateStatus();
@@ -426,7 +426,7 @@ function stopVpnStatus() {
 async function syncMihomoStatus() {
   try {
     const res = await sendRuntimeMessage({ type: 'MIHOMO_STATUS' });
-    if (res?.running) {
+    if (res && res.running) {
       showVpnMessage(`Mihomo 运行中 · PID ${res.pid || ''}`);
       startVpnStatus();
     }else{
@@ -461,7 +461,7 @@ async function toggleAllowLan() {
   showControllerMessage(next ? '正在开启局域网访问...' : '正在关闭局域网访问...');
   try {
     const res = await sendRuntimeMessage({ type: 'MIHOMO_SET_ALLOW_LAN', allowLan: next, restart: true });
-    if (!res?.ok) throw new Error(res?.error || '设置失败');
+    if (!res || !res.ok) throw new Error((res && res.error) || '设置失败');
     currentSettings = await getSettings();
     renderSettings(currentSettings);
     showControllerMessage(next ? '已开启局域网访问' : '已关闭局域网访问');
@@ -474,7 +474,7 @@ async function updateSubscriptionFromPopup() {
   try {
     showControllerMessage('正在更新订阅...');
     const res = await sendRuntimeMessage({ type: 'MIHOMO_UPDATE_SUBSCRIPTION', restart: true });
-    if (!res?.ok) throw new Error(res?.error || '更新失败');
+    if (!res || !res.ok) throw new Error((res && res.error) || '更新失败');
     showControllerMessage(res.message || '订阅已更新');
     await refreshGroups();
   } catch (error) {
@@ -541,15 +541,15 @@ async function pollStats() {
       upload = 'N/A';
       download = 'N/A';
       conns = '-';
-      const reason = String(connError?.message || connError).split('\n')[0];
+      const reason = String((connError && connError.message) || connError).split('\n')[0];
       totalUp = reason.slice(0, 30);
       totalDown = '';
       lastConnStats = null;
     } else {
       const now = Date.now();
-      const tUp = Number(conn?.uploadTotal ?? conn?.totalUpload ?? 0);
-      const tDown = Number(conn?.downloadTotal ?? conn?.totalDownload ?? 0);
-      const connCount = Array.isArray(conn?.connections) ? conn.connections.length : 0;
+      const tUp = Number((conn && conn.uploadTotal != null ? conn.uploadTotal : (conn && conn.totalUpload != null ? conn.totalUpload : 0)));
+      const tDown = Number((conn && conn.downloadTotal != null ? conn.downloadTotal : (conn && conn.totalDownload != null ? conn.totalDownload : 0)));
+      const connCount = Array.isArray(conn && conn.connections) ? conn.connections.length : 0;
 
       if (lastConnStats) {
         const dt = Math.max((now - lastConnStats.time) / 1000, 0.1);

@@ -34,9 +34,89 @@ const DEFAULT_SETTINGS = {
   activeProfileId: ''
 };
 
+function storageGet(defaults) {
+  return new Promise(function(resolve, reject) {
+    chrome.storage.local.get(defaults, function(result) {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(result || {});
+    });
+  });
+}
+
+function storageSet(value) {
+  return new Promise(function(resolve, reject) {
+    chrome.storage.local.set(value, function() {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function proxySettingsSet(details) {
+  return new Promise(function(resolve, reject) {
+    chrome.proxy.settings.set(details, function() {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function proxySettingsClear(details) {
+  return new Promise(function(resolve, reject) {
+    chrome.proxy.settings.clear(details, function() {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function extensionActionApi() {
+  return chrome.action || chrome.browserAction;
+}
+
+function setBadgeTextCompat(details) {
+  var action = extensionActionApi();
+  if (!action || !action.setBadgeText) return Promise.resolve();
+  return new Promise(function(resolve, reject) {
+    action.setBadgeText(details, function() {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function setBadgeBackgroundColorCompat(details) {
+  var action = extensionActionApi();
+  if (!action || !action.setBadgeBackgroundColor) return Promise.resolve();
+  return new Promise(function(resolve, reject) {
+    action.setBadgeBackgroundColor(details, function() {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
-  const current = await chrome.storage.local.get(DEFAULT_SETTINGS);
-  await chrome.storage.local.set({ ...DEFAULT_SETTINGS, ...current });
+  const current = await storageGet(DEFAULT_SETTINGS);
+  await storageSet({ ...DEFAULT_SETTINGS, ...current });
   await applyProxyFromStorage();
 });
 
@@ -55,66 +135,66 @@ chrome.storage.onChanged.addListener((changes, area) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     try {
-      if (message?.type === 'APPLY_PROXY') {
+      if (message && message.type === 'APPLY_PROXY') {
         await applyProxyFromStorage();
         sendResponse({ ok: true });
         return;
       }
-      if (message?.type === 'CLEAR_PROXY') {
+      if (message && message.type === 'CLEAR_PROXY') {
         await clearProxy();
         sendResponse({ ok: true });
         return;
       }
-      if (message?.type === 'GET_PROXY_STATE') {
+      if (message && message.type === 'GET_PROXY_STATE') {
         const state = await getProxyState();
         sendResponse({ ok: true, state });
         return;
       }
-      if (message?.type === 'MIHOMO_START') {
+      if (message && message.type === 'MIHOMO_START') {
         const result = await startVpn();
         sendResponse({ ok: true, ...result });
         return;
       }
-      if (message?.type === 'MIHOMO_STOP') {
+      if (message && message.type === 'MIHOMO_STOP') {
         const result = await stopVpn();
         sendResponse({ ok: true, ...result });
         return;
       }
-      if (message?.type === 'MIHOMO_STATUS') {
+      if (message && message.type === 'MIHOMO_STATUS') {
         const result = await nativeMihomoMessage({ type: 'status' });
         sendResponse({ ok: true, ...result });
         return;
       }
-      if (message?.type === 'MIHOMO_UPDATE_SUBSCRIPTION') {
+      if (message && message.type === 'MIHOMO_UPDATE_SUBSCRIPTION') {
         const result = await updateSubscription(Boolean(message.restart));
         sendResponse({ ok: true, ...result });
         return;
       }
-      if (message?.type === 'MIHOMO_GET_SUBSCRIPTION_INFO') {
+      if (message && message.type === 'MIHOMO_GET_SUBSCRIPTION_INFO') {
         const result = await nativeMihomoMessage({ type: 'getSubscriptionInfo', url: message.url });
         sendResponse({ ok: true, ...result });
         return;
       }
-      if (message?.type === 'MIHOMO_SET_ALLOW_LAN') {
+      if (message && message.type === 'MIHOMO_SET_ALLOW_LAN') {
         const result = await setAllowLan(Boolean(message.allowLan), Boolean(message.restart));
         sendResponse({ ok: true, ...result });
         return;
       }
-      if (message?.type === 'MIHOMO_GET_CONFIG') {
+      if (message && message.type === 'MIHOMO_GET_CONFIG') {
         const result = await nativeMihomoMessage({ type: 'getConfig' });
         sendResponse({ ok: true, ...result });
         return;
       }
       sendResponse({ ok: false, error: 'Unknown message type' });
     } catch (error) {
-      sendResponse({ ok: false, error: String(error?.message || error) });
+      sendResponse({ ok: false, error: String((error && error.message) || error) });
     }
   })();
   return true;
 });
 
 async function applyProxyFromStorage() {
-  const settings = await chrome.storage.local.get(DEFAULT_SETTINGS);
+  const settings = await storageGet(DEFAULT_SETTINGS);
   if (!settings.enabled || settings.mode === 'direct') {
     await clearProxy();
     await updateBadge(false, settings.mode);
@@ -122,12 +202,12 @@ async function applyProxyFromStorage() {
   }
 
   const config = buildChromeProxyConfig(settings);
-  await chrome.proxy.settings.set({ value: config, scope: 'regular' });
+  await proxySettingsSet({ value: config, scope: 'regular' });
   await updateBadge(true, settings.mode);
 }
 
 async function clearProxy() {
-  await chrome.proxy.settings.clear({ scope: 'regular' });
+  await proxySettingsClear({ scope: 'regular' });
   await updateBadge(false, 'direct');
 }
 
@@ -229,7 +309,7 @@ function FindProxyForURL(url, host) {
     }
   }
 
-  return ${JSON.stringify(match?.action === 'PROXY' ? 'PROXY' : 'DIRECT')} === 'PROXY' ? PROXY : DIRECT;
+  return ${JSON.stringify((match && match.action) === 'PROXY' ? 'PROXY' : 'DIRECT')} === 'PROXY' ? PROXY : DIRECT;
 }
 `.trim();
 }
@@ -238,7 +318,7 @@ function parseRuleLine(line) {
   const clean = String(line || '').trim();
   if (!clean || clean.startsWith('#')) return null;
   const parts = clean.split(',').map((part) => part.trim());
-  const type = parts[0]?.toUpperCase();
+  const type = (parts[0] ? parts[0].toUpperCase() : undefined);
   const value = parts[1] || '';
   const action = (parts[2] || parts[1] || 'DIRECT').toUpperCase() === 'PROXY' ? 'PROXY' : 'DIRECT';
 
@@ -259,8 +339,8 @@ function cidrToMask(bits) {
 }
 
 async function updateBadge(enabled, mode) {
-  await chrome.action.setBadgeText({ text: enabled ? mode.slice(0, 1).toUpperCase() : '' });
-  await chrome.action.setBadgeBackgroundColor({ color: enabled ? '#12b981' : '#64748b' });
+  await setBadgeTextCompat({ text: enabled ? mode.slice(0, 1).toUpperCase() : '' });
+  await setBadgeBackgroundColorCompat({ color: enabled ? '#12b981' : '#64748b' });
 }
 
 async function getProxyState() {
@@ -270,7 +350,7 @@ async function getProxyState() {
 }
 
 async function nativeMihomoMessage(payload) {
-  const settings = await chrome.storage.local.get(DEFAULT_SETTINGS);
+  const settings = await storageGet(DEFAULT_SETTINGS);
   return new Promise((resolve, reject) => {
     chrome.runtime.sendNativeMessage(settings.nativeHostName, payload, (response) => {
       if (chrome.runtime.lastError) {
@@ -280,8 +360,8 @@ async function nativeMihomoMessage(payload) {
         ].join('\n')));
         return;
       }
-      if (!response?.ok) {
-        reject(new Error(response?.error || '本地启动器返回失败'));
+      if (!response || !response.ok) {
+        reject(new Error((response && response.error) || '本地启动器返回失败'));
         return;
       }
       resolve(response);
@@ -292,17 +372,17 @@ async function nativeMihomoMessage(payload) {
 function getActiveSubscriptionUrl(settings) {
   const subscriptions = normalizeSubscriptions(settings.subscriptions, settings.subscriptionUrl);
   const active = subscriptions.find((item) => item.id === settings.activeSubscriptionId) || subscriptions[0];
-  return active?.url || settings.subscriptionUrl || '';
+  return (active && active.url) || settings.subscriptionUrl || '';
 }
 
 function normalizeSubscriptions(subscriptions, legacyUrl = '') {
   const list = Array.isArray(subscriptions) ? subscriptions : [];
   const normalized = list
     .map((item) => ({
-      id: String(item?.id || '').trim(),
-      name: String(item?.name || '').trim(),
-      url: String(item?.url || '').trim(),
-      remark: String(item?.remark || '').trim()
+      id: String((item && item.id) || '').trim(),
+      name: String((item && item.name) || '').trim(),
+      url: String((item && item.url) || '').trim(),
+      remark: String((item && item.remark) || '').trim()
     }))
     .filter((item) => item.url);
   if (!normalized.length && legacyUrl) {
@@ -317,7 +397,7 @@ function extractControllerAddress(url) {
 }
 
 async function startVpn() {
-  const settings = await chrome.storage.local.get(DEFAULT_SETTINGS);
+  const settings = await storageGet(DEFAULT_SETTINGS);
   const subscriptionUrl = getActiveSubscriptionUrl(settings);
   const controller = extractControllerAddress(settings.controllerUrl);
   if (settings.updateSubscriptionBeforeStart && subscriptionUrl) {
@@ -325,20 +405,20 @@ async function startVpn() {
   }
   const result = await nativeMihomoMessage({ type: 'start' });
   await waitForControllerReady(12000);
-  await chrome.storage.local.set({ enabled: true, mode: 'rule', proxyHost: '127.0.0.1', proxyPort: 7890, proxyType: 'mixed' });
+  await storageSet({ enabled: true, mode: 'rule', proxyHost: '127.0.0.1', proxyPort: 7890, proxyType: 'mixed' });
   await applyProxyFromStorage();
   await updateBadge(true, 'rule');
   return { ...result, message: result.message || 'VPN 已启动' };
 }
 
 async function updateSubscription(restartAfterUpdate = false) {
-  const settings = await chrome.storage.local.get(DEFAULT_SETTINGS);
+  const settings = await storageGet(DEFAULT_SETTINGS);
   const subscriptionUrl = getActiveSubscriptionUrl(settings);
   if (!subscriptionUrl) throw new Error('请先在高级设置里添加并启用一个订阅链接');
   const wasRunning = await nativeMihomoMessage({ type: 'status' }).catch(() => ({ running: false }));
   const controller = extractControllerAddress(settings.controllerUrl);
   const result = await nativeMihomoMessage({ type: 'updateSubscription', url: subscriptionUrl, allowLan: Boolean(settings.allowLan), proxyPort: Number(settings.proxyPort || 7890), controller });
-  if (restartAfterUpdate && wasRunning?.running) {
+  if (restartAfterUpdate && (wasRunning && wasRunning.running)) {
     await nativeMihomoMessage({ type: 'restart' });
     await waitForControllerReady(12000);
   }
@@ -347,9 +427,9 @@ async function updateSubscription(restartAfterUpdate = false) {
 
 async function setAllowLan(allowLan, restartAfterChange = false) {
   const wasRunning = await nativeMihomoMessage({ type: 'status' }).catch(() => ({ running: false }));
-  await chrome.storage.local.set({ allowLan });
+  await storageSet({ allowLan });
   const result = await nativeMihomoMessage({ type: 'setAllowLan', allowLan });
-  if (restartAfterChange && wasRunning?.running) {
+  if (restartAfterChange && (wasRunning && wasRunning.running)) {
     await nativeMihomoMessage({ type: 'restart' });
     await waitForControllerReady(12000);
   }
@@ -361,14 +441,14 @@ async function stopVpn() {
   try {
     result = await nativeMihomoMessage({ type: 'stop' });
   } finally {
-    await chrome.storage.local.set({ enabled: false, mode: 'direct' });
+    await storageSet({ enabled: false, mode: 'direct' });
     await clearProxy();
   }
   return { ...result, message: result.message || 'VPN 已停止' };
 }
 
 async function waitForControllerReady(timeoutMs) {
-  const settings = await chrome.storage.local.get(DEFAULT_SETTINGS);
+  const settings = await storageGet(DEFAULT_SETTINGS);
   const base = String(settings.controllerUrl || 'http://127.0.0.1:9090').replace(/\/+$/, '');
   const headers = {};
   if (settings.controllerSecret) headers.Authorization = `Bearer ${settings.controllerSecret}`;
@@ -389,7 +469,7 @@ async function waitForControllerReady(timeoutMs) {
   throw new Error([
     'Mihomo 已尝试启动，但 External Controller 未就绪。',
     `检测地址：${base}/version`,
-    `最后错误：${lastError?.message || 'unknown'}`,
+    `最后错误：${(lastError && lastError.message) || 'unknown'}`,
     '请确认 core\\config.yaml 里包含 external-controller: 127.0.0.1:9090。'
   ].join('\n'));
 }

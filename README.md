@@ -39,6 +39,15 @@ cd /d F:\pro\h5\clash-chrome-extension
 installer\install-app.bat
 ```
 
+如果客户机 Chrome 版本较低，无法加载 Manifest V3 插件，可安装兼容版（Manifest V2）：
+
+```bat
+cd /d F:\pro\h5\clash-chrome-extension
+installer\install-app-legacy-chrome.bat
+```
+
+兼容版建议用于 Chrome 49–87。Chrome 88+ 优先使用默认 Manifest V3 安装方式。
+
 它会安装到：
 
 ```text
@@ -69,17 +78,25 @@ chrome://extensions/
 
 需要先安装 Inno Setup 6。
 
-执行：
+执行默认新版 Chrome（Manifest V3）安装包构建：
 
 ```bat
 cd /d F:\pro\h5\clash-chrome-extension
 installer\build-installer.bat
 ```
 
+如果要给低版本 Chrome 构建兼容版（Manifest V2）安装包，执行：
+
+```bat
+cd /d F:\pro\h5\clash-chrome-extension
+installer\build-installer-legacy-chrome.bat
+```
+
 输出文件：
 
 ```text
-installer\dist\ClashSwitchboardSetup.exe
+installer\dist\ClashSwitchboardSetup-v1.exe
+installer\dist\ClashSwitchboardSetup-v1-legacy-chrome.exe
 ```
 
 客户使用流程：
@@ -108,9 +125,13 @@ clash-chrome-extension/
 │  └─ src/main.rs
 ├─ installer/
 │  ├─ install-app.bat
+│  ├─ install-app-legacy-chrome.bat
 │  ├─ build-installer.bat
-│  └─ ClashSwitchboard.iss
+│  ├─ build-installer-legacy-chrome.bat
+│  ├─ ClashSwitchboard.iss
+│  └─ ClashSwitchboardLegacyChrome.iss
 ├─ manifest.json
+├─ manifest.v2.json
 ├─ popup.html
 ├─ popup.js
 ├─ background.js

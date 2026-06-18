@@ -1,0 +1,97 @@
+#define MyAppName "块垒加速器"
+#define MyAppVersion "1.0.0"
+#define MyAppPublisher "块垒加速器"
+#define MyAppExeName "clash-switchboard-host.exe"
+#define ExtensionId "aggoidfhenhmcjdahailamnlingebmem"
+#define NativeHostName "com.clash_switchboard.mihomo"
+
+[Setup]
+AppId={{7D5EB355-D829-49B9-B5DD-CLASHSWITCH01}
+AppName={#MyAppName} 旧版 Chrome 兼容版
+AppVersion={#MyAppVersion}
+AppPublisher={#MyAppPublisher}
+DefaultDirName={localappdata}\ClashSwitchboard
+DefaultGroupName={#MyAppName}
+DisableProgramGroupPage=yes
+OutputDir=dist
+OutputBaseFilename=ClashSwitchboardSetup-v1-legacy-chrome
+Compression=lzma2
+SolidCompression=yes
+WizardStyle=modern
+PrivilegesRequired=lowest
+ArchitecturesInstallIn64BitMode=x64compatible
+UninstallDisplayName={#MyAppName} 旧版 Chrome 兼容版
+
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Tasks]
+Name: "desktopicon"; Description: "创建桌面说明快捷方式"; GroupDescription: "附加选项:"; Flags: unchecked
+
+[Files]
+; 旧版 Chrome 使用 Manifest V2。安装到扩展目录时重命名为 manifest.json。
+Source: "..\manifest.v2.json"; DestDir: "{app}\extension"; DestName: "manifest.json"; Flags: ignoreversion
+Source: "..\background.js"; DestDir: "{app}\extension"; Flags: ignoreversion
+Source: "..\clash-api.js"; DestDir: "{app}\extension"; Flags: ignoreversion
+Source: "..\popup.html"; DestDir: "{app}\extension"; Flags: ignoreversion
+Source: "..\popup.js"; DestDir: "{app}\extension"; Flags: ignoreversion
+Source: "..\options.html"; DestDir: "{app}\extension"; Flags: ignoreversion
+Source: "..\options.js"; DestDir: "{app}\extension"; Flags: ignoreversion
+Source: "..\styles.css"; DestDir: "{app}\extension"; Flags: ignoreversion
+Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\icons\*"; DestDir: "{app}\extension\icons"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\native-host\clash-switchboard-host.exe"; DestDir: "{app}\native-host"; Flags: ignoreversion
+Source: "..\native-host\install-native-host.bat"; DestDir: "{app}\native-host"; Flags: ignoreversion
+Source: "..\native-host\uninstall-native-host.bat"; DestDir: "{app}\native-host"; Flags: ignoreversion
+Source: "..\core\nb-mihomo.exe"; DestDir: "{app}\core"; Flags: ignoreversion
+
+[Icons]
+Name: "{group}\使用说明"; Filename: "{app}\README.md"
+Name: "{autodesktop}\块垒加速器 使用说明"; Filename: "{app}\README.md"; Tasks: desktopicon
+
+[Registry]
+Root: HKCU; Subkey: "Software\Google\Chrome\NativeMessagingHosts\{#NativeHostName}"; ValueType: string; ValueName: ""; ValueData: "{app}\native-host\{#NativeHostName}.json"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Google\Chrome\Extensions\{#ExtensionId}"; ValueType: string; ValueName: "path"; ValueData: "{app}\extension\manifest.json"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Google\Chrome\Extensions\{#ExtensionId}"; ValueType: string; ValueName: "version"; ValueData: "{#MyAppVersion}"; Flags: uninsdeletekey
+
+[Code]
+function InitializeSetup(): Boolean;
+begin
+  Result := True;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  NativeJsonPath: String;
+  NativeExePath: String;
+  JsonText: String;
+  ResultCode: Integer;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    NativeJsonPath := ExpandConstant('{app}\native-host\{#NativeHostName}.json');
+    NativeExePath := ExpandConstant('{app}\native-host\{#MyAppExeName}');
+    StringChangeEx(NativeExePath, '\', '\\', True);
+
+    JsonText := '{' + #13#10 +
+      '  "name": "{#NativeHostName}",' + #13#10 +
+      '  "description": "可牛块垒加速器",' + #13#10 +
+      '  "path": "' + NativeExePath + '",' + #13#10 +
+      '  "type": "stdio",' + #13#10 +
+      '  "allowed_origins": [' + #13#10 +
+      '    "chrome-extension://{#ExtensionId}/"' + #13#10 +
+      '  ]' + #13#10 +
+      '}';
+
+    SaveStringToFile(NativeJsonPath, JsonText, False);
+
+    Exec(
+      ExpandConstant('{app}\native-host\install-native-host.bat'),
+      '',
+      ExpandConstant('{app}\native-host'),
+      SW_SHOW,
+      ewWaitUntilTerminated,
+      ResultCode
+    );
+  end;
+end;
